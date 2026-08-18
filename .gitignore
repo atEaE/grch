@@ -1,1 +1,6 @@
 .mise.toml
+.local
+
+# Added by cargo
+
+/target
