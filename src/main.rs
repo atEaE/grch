@@ -16,12 +16,14 @@ enum Command {
     /// Check the CRC32 of the ROM file
     Crc {
         /// Target rom file (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
+        #[arg(short, long, num_args = 1.., required = true)]
         input: Vec<PathBuf>
     },
 
     /// Rename to the official name registered in the ROM file database
     Rename {
         /// Target rom file (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
+        #[arg(short, long, num_args = 1.., required = true)]
         input: Vec<PathBuf>
     }
 }
