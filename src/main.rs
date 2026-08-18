@@ -5,7 +5,7 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    // 入力として受け取るファイルパス
+    /// Input filepath (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
     #[arg(short, long, num_args = 1.., required = true)]
     input: Vec<PathBuf>,
 }
