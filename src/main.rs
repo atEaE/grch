@@ -1,23 +1,36 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
+
+mod commands;
 
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    /// Input filepath (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
-    #[arg(short, long, num_args = 1.., required = true)]
-    input: Vec<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Check the CRC32 of the ROM file
+    Crc {
+        /// Target rom file (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
+        input: Vec<PathBuf>
+    },
+
+    /// Rename to the official name registered in the ROM file database
+    Rename {
+        /// Target rom file (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
+        input: Vec<PathBuf>
+    }
 }
 
 fn main() {
     let args = Args::parse();
 
-    for path in &args.input {
-        if path.is_file() {
-            println!("{}", path.display())
-        } else {
-            eprintln!("skip: {} (file not found)", path.display())
-        }
+    match args.command {
+        Command::Crc { input } => commands::crc::run(&input),
+        Command::Rename { input } => commands::rename::run(&input),
     }
 }
