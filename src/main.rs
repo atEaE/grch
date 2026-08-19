@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 mod commands;
+mod input;
 
 #[derive(Parser)]
 #[command(version, about)]
