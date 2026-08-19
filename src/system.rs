@@ -5,7 +5,7 @@ pub enum System {
 }
 
 impl System {
-	/// 入力ファイルの拡張子から、対応可能な場合は対応システムを返す
+	/// Returns the corresponding system based on the input file extension, if supported
 	pub fn from_path(path: &Path) -> Option<Self> {
 		let ext = path.extension().and_then(|e| e.to_str());
 		match ext {
@@ -14,7 +14,7 @@ impl System {
 		}
 	}
 
-	/// システムに対応するDATファイルを https://github.com/libretro/libretro-database から取得する。
+	/// Obtain the DAT file corresponding to the system from https://github.com/libretro/libretro-database .
 	pub fn dat_url(&self) -> String {
 		match self {
 			System::Gba => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Advance.dat".to_string(),

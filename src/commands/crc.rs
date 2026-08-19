@@ -1,19 +1,22 @@
 use std::path::PathBuf;
 
-use crate::input;
+use anyhow::Ok;
 
-pub fn run(input: &[PathBuf]) {
+use crate::{dat, input, system::System};
+
+pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
 	let files = input::collect_files(input);
 
 	for path in &files {
-		match std::fs::read(path) {
-            Ok(data) => {
-                let crc = crc32fast::hash(&data);
-                println!("{:08X}  {}", crc, path.display());
+        match System::from_path(path) {
+            Some(system) => {       
+                let body = dat::fetch_body(&system)?;
+                println!("{}", body)
             }
-            Err(e) => {
-                eprintln!("skip: {} ({})", path.display(), e);
+            None => {
+
             }
         }
 	}
+    Ok(())
 }

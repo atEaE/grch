@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod input;
 mod system;
+mod dat;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -30,11 +31,12 @@ enum Command {
     }
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Command::Crc { input } => commands::crc::run(&input),
+        Command::Crc { input } => commands::crc::run(&input)?,
         Command::Rename { input } => commands::rename::run(&input),
     }
+    Ok(())
 }
