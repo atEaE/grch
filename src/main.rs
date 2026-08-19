@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 
 mod commands;
 mod input;
+mod system;
 
 #[derive(Parser)]
 #[command(version, about)]
