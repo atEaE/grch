@@ -37,7 +37,7 @@ fn main() -> anyhow::Result<()> {
 
     match args.command {
         Command::Crc { input } => commands::crc::run(&input)?,
-        Command::Rename { input } => commands::rename::run(&input),
+        Command::Rename { input } => commands::rename::run(&input)?,
     }
     Ok(())
 }
