@@ -48,7 +48,7 @@ jobs:
       - run:
           cp target/${{ matrix.target }}/release/grch${{ matrix.ext }} grch-${{ matrix.target }}${{ matrix.ext }}
         shell: bash
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: 
           name: grch-${{ matrix.target }}
           path: grch-${{ matrix.target }}${{ matrix.ext }}
