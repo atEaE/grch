@@ -1,15 +1,14 @@
 use std::fs;
 
 use anyhow::Context;
+use colored::Colorize;
 
 use crate::dir;
-
-use colored::Colorize;
 
 pub fn clean() -> anyhow::Result<()> {
     let parent = dir::grch_cache_dir()?;
     if !parent.exists() {
-        println!("grch cache not exists. may be already deleted?");
+        println!("grch cache does not exist. Nothing to clean.");
         return Ok(());
     }
 
