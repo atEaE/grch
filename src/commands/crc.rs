@@ -1,13 +1,15 @@
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::collections::{HashSet, HashMap};
+use std::path::PathBuf;
 
-use crate::input;
+use colored::Colorize;
+
 use crate::dat;
-use crate::system::{System};
+use crate::input;
+use crate::system::System;
 
 pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
-	let files = input::collect_files(input);
+    let files = input::collect_files(input);
 
     let mut systems = HashSet::new();
     for path in &files {
@@ -32,9 +34,9 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
             Ok(data) => {
                 let crc = crc32fast::hash(&data);
                 if let Some(entry) = dats[&system].get(&crc) {
-                    
+                    let filename = path.file_name().unwrap_or(path.as_os_str()).display();
+                    println!("{} {} -> {}", "✓".green(), filename, entry.name)
                 } else {
-                    
                 }
             }
             Err(e) => {

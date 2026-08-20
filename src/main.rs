@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 mod commands;
-mod input;
-mod system;
 mod dat;
 mod dir;
+mod input;
+mod system;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -21,15 +21,15 @@ enum Command {
     Crc {
         /// Target rom file (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
         #[arg(short, long, num_args = 1.., required = true)]
-        input: Vec<PathBuf>
+        input: Vec<PathBuf>,
     },
 
     /// Rename to the official name registered in the ROM file database
     Rename {
         /// Target rom file (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
         #[arg(short, long, num_args = 1.., required = true)]
-        input: Vec<PathBuf>
-    }
+        input: Vec<PathBuf>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
