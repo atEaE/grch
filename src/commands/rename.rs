@@ -3,7 +3,6 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-use colored::Colorize;
 
 use crate::dat;
 use crate::input;

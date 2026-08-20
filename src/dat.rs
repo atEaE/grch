@@ -35,7 +35,7 @@ pub fn load(system: &System) -> Result<String> {
 fn cache(system: &System, body: &str) -> Result<()> {
     let dir = dir::romdat_cache_dir()?;
     fs::create_dir_all(&dir)?;
-    fs::write(dir.join(system.name().to_string()), body)?;
+    fs::write(dir.join(system.name()), body)?;
     Ok(())
 }
 
