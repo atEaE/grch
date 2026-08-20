@@ -58,3 +58,44 @@ pub fn parse_dat(body: &str) -> HashMap<u32, DatEntry> {
     }
     map
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_dat_extracts_name_and_crc() {
+        // arrange
+        let body = r#"
+game (
+	name "Pocket Monsters - Pikachu (Japan) (Rev 1) (SGB Enhanced)"
+	region "Japan"
+	rom ( name "Pocket Monsters - Pikachu (Japan) (Rev 1) (SGB Enhanced).gb" size 1048576 crc A2545D33 md5 96C1F411671B6E1761CF31884DDE0DBB sha1 28E4B8531EA4EA1DE5A396FCCB0CFBA51B06B149 )
+)  
+game (
+	name "Super Mario Land (World)"
+	rom ( name "Super Mario Land (World).gb" size 65536 crc 90776841 md5 B48161623F12F86FEC88320166A21FCE sha1 3A4DDB39B234A67FFB361EE7ABC3D23E0A8B1C89 )
+)
+"#;
+
+        // act
+        let results = parse_dat(body);
+
+        // assert
+        assert_eq!(results.len(), 2);
+
+        {
+            let pokemon_crc = 0xA2545D33;
+            let entry = results.get(&pokemon_crc).unwrap();
+            assert_eq!(
+                entry.name,
+                "Pocket Monsters - Pikachu (Japan) (Rev 1) (SGB Enhanced).gb"
+            );
+        }
+        {
+            let mario_crc = 0x90776841;
+            let entry = results.get(&mario_crc).unwrap();
+            assert_eq!(entry.name, "Super Mario Land (World).gb");
+        }
+    }
+}
