@@ -1,8 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::format;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
+use anyhow::Context;
+use colored::Colorize;
 
 use crate::dat;
 use crate::input;
@@ -66,12 +69,19 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
 
     print!("Rename {} files? [y/N]: ", plan.len());
     io::stdout().flush()?;
-    
+
     let mut answer = String::new();
     io::stdin().lock().read_line(&mut answer)?;
     if !matches!(answer.trim().to_lowercase().as_str(), "y" | "yes") {
         println!("aborted");
         return Ok(());
+    }
+
+    for (from, to) in plan {
+        fs::rename(&from, &to).with_context(|| format!("rename file: {}", from.display()))?;
+
+        let filename = to.file_name().unwrap_or(to.as_os_str()).display();
+        println!("{} {}", "✓".green(), filename);
     }
 
     Ok(())
