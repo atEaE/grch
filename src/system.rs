@@ -2,7 +2,10 @@ use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum System {
+    /// Game Boy Advance
     Gba,
+    /// Super Family Computer
+    Sfc,
 }
 
 impl System {
@@ -10,6 +13,7 @@ impl System {
     pub fn name(&self) -> &'static str {
         match self {
             System::Gba => "gba",
+            System::Sfc => "sfc",
         }
     }
 
@@ -18,6 +22,7 @@ impl System {
         let ext = path.extension().and_then(|e| e.to_str());
         match ext {
             Some("gba") => Some(System::Gba),
+            Some("sfc") => Some(System::Sfc),
             _ => None,
         }
     }
@@ -26,6 +31,7 @@ impl System {
     pub fn dat_url(&self) -> String {
         match self {
 			System::Gba => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Advance.dat".to_string(),
+            System::Sfc => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System.dat".to_string(),
 		}
     }
 }
