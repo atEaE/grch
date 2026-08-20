@@ -30,6 +30,18 @@ enum Command {
         #[arg(short, long, num_args = 1.., required = true)]
         input: Vec<PathBuf>,
     },
+
+    /// Control the cache
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum CacheCommand {
+    /// Remove all cache files
+    Clean,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -38,6 +50,9 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         Command::Crc { input } => commands::crc::run(&input)?,
         Command::Rename { input } => commands::rename::run(&input)?,
+        Command::Cache { command } => match command {
+            CacheCommand::Clean => commands::cache::clean()?,
+        },
     }
     Ok(())
 }
