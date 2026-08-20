@@ -25,8 +25,9 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
     }
 
     for path in &files {
+        let filename = path.file_name().unwrap_or(path.as_os_str()).display();
         let Some(system) = System::from_path(path) else {
-            eprintln!("skip: {} (unsupported file type", path.display());
+            eprintln!("{} {} (unsupported file type)", "-".dimmed(), filename);
             continue;
         };
 
@@ -34,9 +35,9 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
             Ok(data) => {
                 let crc = crc32fast::hash(&data);
                 if let Some(entry) = dats[&system].get(&crc) {
-                    let filename = path.file_name().unwrap_or(path.as_os_str()).display();
-                    println!("{} {} -> {}", "✓".green(), filename, entry.name)
+                    println!("{} {} -> {:08X} {}", "✓".green(), filename, entry.crc, entry.name)
                 } else {
+                    println!("{} {} (unknown crc: {:08X})", "✗".red(), filename, crc)
                 }
             }
             Err(e) => {
