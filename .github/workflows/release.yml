@@ -35,25 +35,25 @@ jobs:
         include:
           - runner: macos-15
             target: aarch64-apple-darwin
-            ext: ""
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
-            ext: ".exe"
             
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - run:
           cargo build --release --target ${{ matrix.target }}
-      - run:
-          cp target/${{ matrix.target }}/release/grch${{ matrix.ext }} grch-${{ matrix.target }}${{ matrix.ext }}
-        shell: bash
+      - name: Package (tar.gz)
+        if: runner.os != 'Windows'
+        run: tar -czf grch-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release grch
+      - name: Package (zip)
+        if: runner.os == 'Windows'
+        run: 7z a grch-${{ matrix.target }}.zip ./target/${{ matrix.target }}/release/grch.exe
       - uses: actions/upload-artifact@v7
         with: 
           name: grch-${{ matrix.target }}
-          path: grch-${{ matrix.target }}${{ matrix.ext }}
+          path: grch-${{ matrix.target }}.*
       
-
   release:
     needs: [verify, build]
     runs-on: ubuntu-24.04
