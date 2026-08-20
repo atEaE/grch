@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt::format;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
