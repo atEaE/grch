@@ -1,5 +1,6 @@
 .mise.toml
 .local
+.vscode
 
 # Added by cargo
 
