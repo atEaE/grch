@@ -1,22 +1,47 @@
 use std::path::PathBuf;
+use std::fs;
+use std::collections::{HashSet, HashMap};
 
-use anyhow::Ok;
-
-use crate::{dat, input, system::System};
+use crate::input;
+use crate::dat;
+use crate::system::{System};
 
 pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
 	let files = input::collect_files(input);
 
-	for path in &files {
-        match System::from_path(path) {
-            Some(system) => {       
-                let body = dat::fetch_body(&system)?;
-                println!("{}", body)
-            }
-            None => {
+    let mut systems = HashSet::new();
+    for path in &files {
+        if let Some(system) = System::from_path(path) {
+            systems.insert(system);
+        }
+    }
 
+    let mut dats = HashMap::new();
+    for system in &systems {
+        let body = dat::load(&system)?;
+        dats.insert(*system, dat::parse_dat(&body));
+    }
+
+    for path in &files {
+        let Some(system) = System::from_path(path) else {
+            eprintln!("skip: {} (unsupported file type", path.display());
+            continue;
+        };
+
+        match fs::read(path) {
+            Ok(data) => {
+                let crc = crc32fast::hash(&data);
+                if let Some(entry) = dats[&system].get(&crc) {
+                    
+                } else {
+                    
+                }
+            }
+            Err(e) => {
+                eprintln!("skip: {} ({})", path.display(), e);
+                continue;
             }
         }
-	}
+    }
     Ok(())
 }

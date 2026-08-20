@@ -6,6 +6,7 @@ mod commands;
 mod input;
 mod system;
 mod dat;
+mod dir;
 
 #[derive(Parser)]
 #[command(version, about)]

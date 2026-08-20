@@ -1,10 +1,18 @@
 use std::path::Path;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum System {
 	Gba,
 }
 
 impl System {
+	// Returns the name of the target system.
+	pub fn name(&self) -> &'static str {
+		match self {
+			System::Gba => "gba"
+		}
+	}
+
 	/// Returns the corresponding system based on the input file extension, if supported
 	pub fn from_path(path: &Path) -> Option<Self> {
 		let ext = path.extension().and_then(|e| e.to_str());
