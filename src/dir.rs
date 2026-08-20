@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{Context, Ok, Result};
@@ -12,9 +11,4 @@ pub fn romdat_cache_dir() -> Result<PathBuf> {
     let grch_cache = grch_cache_dir()?;
     let rom_dir = grch_cache.join("rom");
     Ok(rom_dir)
-}
-
-pub fn init_cache_dir() -> Result<()> {
-    fs::create_dir_all(romdat_cache_dir()?)?;
-    Ok(())
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 
-use anyhow::{Context, Ok, Result};
+use anyhow::{Ok, Result};
 use regex::Regex;
 
 use crate::dir;
@@ -25,7 +25,7 @@ pub fn load(system: &System) -> Result<String> {
         let body = fs::read_to_string(&file)?;
         Ok(body)
     } else {
-        let body = fetch_body(&system)?;
+        let body = fetch_body(system)?;
         cache(system, &body)?;
         Ok(body)
     }
@@ -35,7 +35,7 @@ pub fn load(system: &System) -> Result<String> {
 fn cache(system: &System, body: &str) -> Result<()> {
     let dir = dir::romdat_cache_dir()?;
     fs::create_dir_all(&dir)?;
-    fs::write(dir.join(format!("{}", system.name())), body)?;
+    fs::write(dir.join(system.name().to_string()), body)?;
     Ok(())
 }
 

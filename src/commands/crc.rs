@@ -20,7 +20,7 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
 
     let mut dats = HashMap::new();
     for system in &systems {
-        let body = dat::load(&system)?;
+        let body = dat::load(system)?;
         dats.insert(*system, dat::parse_dat(&body));
     }
 
