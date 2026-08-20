@@ -10,6 +10,9 @@ use crate::system::System;
 
 pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
     let files = input::collect_files(input);
+    if files.is_empty() {
+        anyhow::bail!("no files matched");
+    }
 
     let mut systems = HashSet::new();
     for path in &files {
