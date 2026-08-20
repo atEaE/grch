@@ -43,6 +43,11 @@ jobs:
       - uses: actions/checkout@v7
       - run:
           cargo build --release --target ${{ matrix.target }}
+      - name: Build MSI
+        if: runner.os == 'Windows'
+        run: |
+          cargo install cargo-wix
+          cargo wix --no-build --nocapture --target ${{ matrix.target }} -o grch-${{ matrix.target }}.msi
       - name: Package (tar.gz)
         if: runner.os != 'Windows'
         run: tar -czf grch-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release grch
