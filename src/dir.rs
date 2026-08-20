@@ -9,6 +9,6 @@ pub fn grch_cache_dir() -> Result<PathBuf> {
 
 pub fn romdat_cache_dir() -> Result<PathBuf> {
     let grch_cache = grch_cache_dir()?;
-    let rom_dir = grch_cache.join("rom");
+    let rom_dir = grch_cache.join("rom_dat");
     Ok(rom_dir)
 }
