@@ -1,0 +1,32 @@
+name: Node CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - '**/*.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.markdownlint-cli2.jsonc'
+      - '.npmrc'
+      - '.github/workflows/node-ci.yml'
+
+jobs:
+  markdown-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Markdown lint
+        run: |
+          npm ci
+          npm run lint:md
