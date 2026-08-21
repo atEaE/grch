@@ -17,10 +17,10 @@ fn fetch_body(system: &System) -> Result<String> {
 }
 
 /// Load DAT file information of the target system
-/// If a cache exists, read from the cache
-pub fn load(system: &System) -> Result<String> {
+/// If a cache exists, read from the cache unless refresh is set
+pub fn load(system: &System, refresh: bool) -> Result<String> {
     let dir = dir::romdat_cache_dir()?;
-    if let Some(body) = read_cache(&dir, system)? {
+    if !refresh && let Some(body) = read_cache(&dir, system)? {
         return Ok(body);
     }
     let body = fetch_body(system)?;
