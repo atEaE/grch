@@ -1,0 +1,19 @@
+{
+  "config": {
+    "MD007": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md007.md
+    "MD012": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md012.md
+    "MD013": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md013.md
+    "MD022": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md022.md
+    "MD032": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md032.md
+    "MD034": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md034.md
+    "MD040": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md040.md
+    "MD041": false, // https://github.com/DavidAnson/markdownlint/blob/main/doc/md041.md
+    "MD060": false  // https://github.com/DavidAnson/markdownlint/blob/main/doc/md060.md
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "node_modules",
+    "**/node_modules",
+    ".local"
+  ]
+}
