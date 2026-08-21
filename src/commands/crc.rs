@@ -8,7 +8,7 @@ use crate::dat;
 use crate::input;
 use crate::system::System;
 
-pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
+pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
     let files = input::collect_files(input);
     if files.is_empty() {
         anyhow::bail!("no files matched");
@@ -23,7 +23,7 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
 
     let mut dats = HashMap::new();
     for system in &systems {
-        let body = dat::load(system)?;
+        let body = dat::load(system, refresh)?;
         dats.insert(*system, dat::parse_dat(&body));
     }
 
