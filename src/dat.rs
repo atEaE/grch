@@ -70,6 +70,18 @@ pub fn parse_dat(body: &str) -> HashMap<u32, DatEntry> {
     map
 }
 
+/// Extract the version from the DAT file
+pub fn extract_version(body: &str) -> Option<String> {
+    let rgx = Regex::new(r#"version "([^"]+)""#).unwrap();
+    for line in body.lines().take(10) {
+        if let Some(caps) = rgx.captures(line) {
+            let version = caps[1].to_string();
+            return Some(version);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod cache_tests {
 
@@ -123,11 +135,11 @@ mod cache_tests {
 }
 
 #[cfg(test)]
-mod parse_dat_tests {
+mod tests {
     use super::*;
 
     #[test]
-    fn extracts_name_and_crc() {
+    fn parse_dat_extracts_name_and_crc() {
         // arrange
         let body = r#"
 game (
@@ -160,5 +172,32 @@ game (
             let entry = results.get(&mario_crc).unwrap();
             assert_eq!(entry.name, "Super Mario Land (World).gb");
         }
+    }
+
+    #[test]
+    fn extract_version_for_dat() {
+        // arrange
+        let body = r#"
+clrmamepro (
+	name "Nintendo - Game Boy Advance"
+	description "Nintendo - Game Boy Advance"
+	version "2026.08.01"
+	homepage "http://github.com/robloach/libretro-dats"
+)
+
+game (
+	name "007 - Everything or Nothing (Japan)"
+	region "Japan"
+	serial "BJBJ"
+	rom ( name "007 - Everything or Nothing (Japan).gba" size 8388608 crc D793E969 md5 55354D9E3BC9C1FA682B5110E5ED1544 sha1 6E4E9BE9A07580EF267BE9C2EA1BD0730B3BE44A serial "BJBJ" )
+)
+"#;
+
+        // act
+        let results = extract_version(body);
+
+        // assert
+        assert_ne!(results, None);
+        assert_eq!(results.as_deref(), Some("2026.08.01"));
     }
 }
