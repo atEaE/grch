@@ -43,17 +43,10 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
                     continue;
                 };
 
-                println!("- {}", filename);
-                println!("   └ {}", entry.name);
-
-                let mut new_name = entry.name.clone();
-                if let Some(ext) = path.extension() {
-                    new_name.push('.');
-                    new_name.push_str(&ext.to_string_lossy());
-                }
-                let new_path = path.with_file_name(&new_name);
-
+                let new_path = path.with_file_name(&entry.name);
                 if *path != new_path {
+                    println!("- {}", filename);
+                    println!("   └ {}", entry.name);
                     plan.push((path.clone(), new_path));
                 }
             }
