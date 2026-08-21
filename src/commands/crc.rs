@@ -38,15 +38,11 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
             Ok(data) => {
                 let crc = crc32fast::hash(&data);
                 if let Some(entry) = dats[&system].get(&crc) {
-                    println!(
-                        "{} {} -> {:08X} {}",
-                        "✓".green(),
-                        filename,
-                        entry.crc,
-                        entry.name
-                    )
+                    println!("{} {}", "✓".green(), filename);
+                    println!("   └ {:08X} | {}", entry.crc, entry.name);
                 } else {
-                    println!("{} {} (unknown crc: {:08X})", "✗".red(), filename, crc)
+                    println!("{} {}", "✗".red(), filename);
+                    println!("   └ {:08X} | (unknown crc)", crc);
                 }
             }
             Err(e) => {

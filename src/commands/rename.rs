@@ -44,7 +44,7 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
                 };
 
                 println!("- {}", filename);
-                println!("   => {}", entry.name);
+                println!("   └ {}", entry.name);
 
                 let mut new_name = entry.name.clone();
                 if let Some(ext) = path.extension() {
