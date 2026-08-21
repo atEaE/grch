@@ -1,0 +1,41 @@
+name: "Create D2M PR"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create-pr:
+    name: Create Develop to Main Pull-Request
+    runs-on: ubuntu-slim
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$(gh pr list --base main --head develop --json number --jq '.[].number')" ]; then
+            echo "PR already exists, skipping"
+            exit 0
+          fi
+          BODY=$(cat <<'EOF'
+          ## About
+
+          develop to main merge
+          EOF
+          )
+          gh pr create \
+            --title "develop to main" \
+            --body "$BODY" \
+            --base main \
+            --head develop
