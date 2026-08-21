@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Ok, Result};
 use regex::Regex;
@@ -18,24 +19,34 @@ fn fetch_body(system: &System) -> Result<String> {
 /// Load DAT file information of the target system
 /// If a cache exists, read from the cache
 pub fn load(system: &System) -> Result<String> {
-    let rom_cache = dir::romdat_cache_dir()?;
-    let file = rom_cache.join(format!("{}.dat", system.name()));
-
-    if file.exists() {
-        let body = fs::read_to_string(&file)?;
-        Ok(body)
-    } else {
-        let body = fetch_body(system)?;
-        cache(system, &body)?;
-        Ok(body)
+    let dir = dir::romdat_cache_dir()?;
+    if let Some(body) = read_cache(&dir, system)? {
+        return Ok(body);
     }
+    let body = fetch_body(system)?;
+    write_cache(&dir, system, &body)?;
+    Ok(body)
+}
+
+/// Generate a .DAT file path for caching
+fn dat_path(dir: &Path, system: &System) -> PathBuf {
+    dir.join(format!("{}.dat", system.name()))
+}
+
+/// Cache read
+fn read_cache(dir: &Path, system: &System) -> Result<Option<String>> {
+    let file = dat_path(dir, system);
+    if !file.exists() {
+        return Ok(None);
+    }
+    let body = fs::read_to_string(&file)?;
+    Ok(Some(body))
 }
 
 /// Cache the DAT file of the target system
-fn cache(system: &System, body: &str) -> Result<()> {
-    let dir = dir::romdat_cache_dir()?;
-    fs::create_dir_all(&dir)?;
-    fs::write(dir.join(system.name()), body)?;
+fn write_cache(dir: &Path, system: &System, body: &str) -> Result<()> {
+    fs::create_dir_all(dir)?;
+    fs::write(dat_path(dir, system), body)?;
     Ok(())
 }
 
@@ -60,11 +71,63 @@ pub fn parse_dat(body: &str) -> HashMap<u32, DatEntry> {
 }
 
 #[cfg(test)]
-mod tests {
+mod cache_tests {
+
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn read_cache_not_exists() {
+        // arrange
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path().join("grch");
+
+        // act
+        let result = read_cache(&dir, &System::Gba).unwrap();
+
+        // assert
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn read_cache_dat() {
+        // arrange
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path().join("grch");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dat_path(&dir, &System::Gb), "test body").unwrap();
+
+        // act
+        let result = read_cache(&dir, &System::Gb).unwrap();
+
+        // assert
+        assert_eq!(result.as_deref(), Some("test body"));
+    }
+
+    #[test]
+    fn write_cache_new() {
+        // arrange
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path().join("grch");
+
+        // act
+        write_cache(&dir, &System::Gb, "test cache here").unwrap();
+
+        // assert
+        let rom_dat_path = dat_path(&dir, &System::Gb);
+        assert!(rom_dat_path.exists());
+
+        let body = fs::read_to_string(rom_dat_path).unwrap();
+        assert_eq!(body, "test cache here")
+    }
+}
+
+#[cfg(test)]
+mod parse_dat_tests {
     use super::*;
 
     #[test]
-    fn parse_dat_extracts_name_and_crc() {
+    fn extracts_name_and_crc() {
         // arrange
         let body = r#"
 game (
