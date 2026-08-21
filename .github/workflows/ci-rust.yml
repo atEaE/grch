@@ -1,0 +1,38 @@
+name: Rust CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'src/**/*.rs'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - '.github/workflows/ci-rust.yml'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+  check:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: macos-15
+          - runner: windows-latest
+          - runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test

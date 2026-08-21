@@ -42,6 +42,8 @@ enum Command {
 enum CacheCommand {
     /// Remove all cache files
     Clean,
+    /// List cache
+    Ls,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -52,6 +54,7 @@ fn main() -> anyhow::Result<()> {
         Command::Rename { input } => commands::rename::run(&input)?,
         Command::Cache { command } => match command {
             CacheCommand::Clean => commands::cache::clean()?,
+            CacheCommand::Ls => commands::cache::ls()?,
         },
     }
     Ok(())

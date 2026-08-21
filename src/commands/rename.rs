@@ -12,6 +12,9 @@ use crate::system::System;
 
 pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
     let files = input::collect_files(input);
+    if files.is_empty() {
+        anyhow::bail!("no files matched");
+    }
 
     let mut systems = HashSet::new();
     for path in &files {
@@ -41,7 +44,7 @@ pub fn run(input: &[PathBuf]) -> anyhow::Result<()> {
                 };
 
                 println!("- {}", filename);
-                println!("   => {}", entry.name);
+                println!("   └ {}", entry.name);
 
                 let mut new_name = entry.name.clone();
                 if let Some(ext) = path.extension() {
