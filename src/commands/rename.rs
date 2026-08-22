@@ -119,8 +119,8 @@ mod tests {
 
         // assert
         assert_eq!(
-            new_path.display().to_string(),
-            "foo/bar/Pocket Monsters - Aka (Japan) (Rev 1) (SGB Enhanced).gb"
+            new_path,
+            Path::new("foo/bar/Pocket Monsters - Aka (Japan) (Rev 1) (SGB Enhanced).gb")
         );
     }
 }
