@@ -23,8 +23,8 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
 
     let mut dats = HashMap::new();
     for system in &systems {
-        let body = dat::load(system, refresh)?;
-        dats.insert(*system, dat::parse_dat(&body));
+        let map = dat::load_merged(system, refresh)?;
+        dats.insert(*system, map);
     }
 
     for path in &files {

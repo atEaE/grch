@@ -17,6 +17,7 @@ Commands:
   crc     Check the CRC32 of the ROM file
   rename  Rename to the official name registered in the ROM file database
   cache   Control the cache
+  dat     Manage custom DAT files
   help    Print this message or the help of the given subcommand(s)
 
 Options:

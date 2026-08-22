@@ -18,14 +18,39 @@ fn fetch_body(system: &System) -> Result<String> {
 
 /// Load DAT file information of the target system
 /// If a cache exists, read from the cache unless refresh is set
-pub fn load(system: &System, refresh: bool) -> Result<String> {
+pub fn load(system: &System, refresh: bool) -> Result<HashMap<u32, DatEntry>> {
     let dir = dir::romdat_cache_dir()?;
     if !refresh && let Some(body) = read_cache(&dir, system)? {
-        return Ok(body);
+        return Ok(parse_dat(&body));
     }
     let body = fetch_body(system)?;
     write_cache(&dir, system, &body)?;
-    Ok(body)
+    Ok(parse_dat(&body))
+}
+
+/// Load custom DAT file information of the target system
+pub fn load_custom(system: &System) -> Result<Option<HashMap<u32, DatEntry>>> {
+    let dir = dir::custom_dat_dir()?;
+    let path = dir.join(format!("{}.dat", system.name()));
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let body = fs::read_to_string(&path)?;
+    Ok(Some(parse_dat(&body)))
+}
+
+/// Load with the official DAT and custom DAT merged
+pub fn load_merged(system: &System, refresh: bool) -> Result<HashMap<u32, DatEntry>> {
+    let official_map = load(system, refresh)?;
+
+    let Some(custom_map) = load_custom(system)? else {
+        return Ok(official_map);
+    };
+
+    let mut merged = official_map;
+    merged.extend(custom_map);
+    Ok(merged)
 }
 
 /// Generate a .DAT file path for caching
