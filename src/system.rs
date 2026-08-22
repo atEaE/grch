@@ -1,6 +1,7 @@
+use clap::ValueEnum;
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
 pub enum System {
     /// Game Boy
     Gb,

@@ -44,6 +44,12 @@ enum Command {
         #[command(subcommand)]
         command: CacheCommand,
     },
+
+    /// Manage custom DAT files
+    Dat {
+        #[command(subcommand)]
+        command: DatCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -52,6 +58,24 @@ enum CacheCommand {
     Clean,
     /// List cache
     Ls,
+}
+
+#[derive(Subcommand)]
+enum DatCommand {
+    /// Add a custom DAT file
+    Add {
+        #[arg(long)]
+        system: system::System,
+
+        #[arg(short, long)]
+        input: PathBuf,
+    },
+
+    /// Show a custom DAT file
+    Show {
+        #[arg(long)]
+        system: system::System,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -63,6 +87,10 @@ fn main() -> anyhow::Result<()> {
         Command::Cache { command } => match command {
             CacheCommand::Clean => commands::cache::clean()?,
             CacheCommand::Ls => commands::cache::ls()?,
+        },
+        Command::Dat { command } => match command {
+            DatCommand::Add { system, input } => commands::dat::add(&system, &input)?,
+            DatCommand::Show { system } => commands::dat::show(&system)?,
         },
     }
     Ok(())
