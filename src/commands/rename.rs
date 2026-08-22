@@ -30,6 +30,8 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
     }
 
     let mut plan: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut already_correct = 0;
+    let mut unknown = 0;
     for path in &files {
         let filename = path.file_name().unwrap_or(path.as_os_str()).display();
         let Some(system) = System::from_path(path) else {
@@ -40,6 +42,7 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
             Ok(data) => {
                 let crc = crc32fast::hash(&data);
                 let Some(entry) = dats[&system].get(&crc) else {
+                    unknown += 1;
                     continue;
                 };
 
@@ -48,6 +51,8 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
                     println!("- {}", filename);
                     println!("   └ {}", entry.name);
                     plan.push((path.clone(), new_path));
+                } else {
+                    already_correct += 1;
                 }
             }
             Err(e) => {
@@ -58,7 +63,18 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
     }
 
     if plan.is_empty() {
-        println!("nothing to rename");
+        if already_correct > 0 && unknown == 0 {
+            println!("all files already match their official No-Intro names");
+        } else if already_correct > 0 && unknown > 0 {
+            println!(
+                "no files to rename ({} already correct, {} unknown)",
+                already_correct, unknown
+            );
+        } else if unknown > 0 {
+            println!("no files matched the database");
+        } else {
+            println!("no supported files found");
+        }
         return Ok(());
     }
 
