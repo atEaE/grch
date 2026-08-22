@@ -50,6 +50,9 @@ enum Command {
         #[command(subcommand)]
         command: DatCommand,
     },
+
+    /// Show grch information
+    Info,
 }
 
 #[derive(Subcommand)]
@@ -96,6 +99,7 @@ fn main() -> anyhow::Result<()> {
             DatCommand::Show { system } => commands::dat::show(&system)?,
             DatCommand::Ls => commands::dat::ls()?,
         },
+        Command::Info => commands::info::run()?,
     }
     Ok(())
 }
