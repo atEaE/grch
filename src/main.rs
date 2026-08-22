@@ -70,6 +70,12 @@ enum DatCommand {
         #[arg(short, long)]
         input: PathBuf,
     },
+
+    /// Show a custom DAT file
+    Show {
+        #[arg(long)]
+        system: system::System,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -84,6 +90,7 @@ fn main() -> anyhow::Result<()> {
         },
         Command::Dat { command } => match command {
             DatCommand::Add { system, input } => commands::dat::add(&system, &input)?,
+            DatCommand::Show { system } => commands::dat::show(&system)?,
         },
     }
     Ok(())
