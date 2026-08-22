@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use colored::Colorize;
@@ -46,7 +46,7 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
                     continue;
                 };
 
-                let new_path = path.with_file_name(&entry.name);
+                let new_path = new_path_for(path, &entry.name);
                 if *path != new_path {
                     println!("- {}", filename);
                     println!("   └ {}", entry.name);
@@ -96,4 +96,31 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn new_path_for(path: &Path, entry_name: &str) -> PathBuf {
+    path.with_file_name(entry_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use crate::commands::rename::new_path_for;
+
+    #[test]
+    fn new_path_for_with_ext() {
+        // arrange
+        let path = Path::new("foo/bar/hoge.gba");
+        let entry_name = "Pocket Monsters - Aka (Japan) (Rev 1) (SGB Enhanced).gb";
+
+        // act
+        let new_path = new_path_for(path, entry_name);
+
+        // assert
+        assert_eq!(
+            new_path.display().to_string(),
+            "foo/bar/Pocket Monsters - Aka (Japan) (Rev 1) (SGB Enhanced).gb"
+        );
+    }
 }
