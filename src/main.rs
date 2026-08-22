@@ -44,6 +44,15 @@ enum Command {
         #[command(subcommand)]
         command: CacheCommand,
     },
+
+    /// Manage custom DAT files
+    Dat {
+        #[command(subcommand)]
+        command: DatCommand,
+    },
+
+    /// Show grch information
+    Info,
 }
 
 #[derive(Subcommand)]
@@ -51,6 +60,27 @@ enum CacheCommand {
     /// Remove all cache files
     Clean,
     /// List cache
+    Ls,
+}
+
+#[derive(Subcommand)]
+enum DatCommand {
+    /// Add a custom DAT file
+    Add {
+        #[arg(long)]
+        system: system::System,
+
+        #[arg(short, long)]
+        input: PathBuf,
+    },
+
+    /// Show a custom DAT file
+    Show {
+        #[arg(long)]
+        system: system::System,
+    },
+
+    /// List custom DAT files
     Ls,
 }
 
@@ -64,6 +94,12 @@ fn main() -> anyhow::Result<()> {
             CacheCommand::Clean => commands::cache::clean()?,
             CacheCommand::Ls => commands::cache::ls()?,
         },
+        Command::Dat { command } => match command {
+            DatCommand::Add { system, input } => commands::dat::add(&system, &input)?,
+            DatCommand::Show { system } => commands::dat::show(&system)?,
+            DatCommand::Ls => commands::dat::ls()?,
+        },
+        Command::Info => commands::info::run()?,
     }
     Ok(())
 }
