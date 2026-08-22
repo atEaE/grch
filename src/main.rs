@@ -76,6 +76,9 @@ enum DatCommand {
         #[arg(long)]
         system: system::System,
     },
+
+    /// List custom DAT files
+    Ls,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -91,6 +94,7 @@ fn main() -> anyhow::Result<()> {
         Command::Dat { command } => match command {
             DatCommand::Add { system, input } => commands::dat::add(&system, &input)?,
             DatCommand::Show { system } => commands::dat::show(&system)?,
+            DatCommand::Ls => commands::dat::ls()?,
         },
     }
     Ok(())
