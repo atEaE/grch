@@ -34,3 +34,44 @@ pub fn show(system: &System) -> anyhow::Result<()> {
     print!("{}", body);
     Ok(())
 }
+
+pub fn ls() -> anyhow::Result<()> {
+    let dir = dir::custom_dat_dir()?;
+    if !dir.exists() {
+        println!("no custom dat");
+        return Ok(());
+    }
+
+    let mut lists = Vec::new();
+    for entry in fs::read_dir(&dir)?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("dat") {
+            continue;
+        }
+
+        let filename = path.file_name().unwrap_or(path.as_os_str()).display();
+        let body = fs::read_to_string(&path)?;
+        let version = dat::extract_version(&body).unwrap_or_else(|| "-".to_string());
+        let modified = entry.metadata()?.modified()?;
+        let modified_chrono: chrono::DateTime<chrono::Local> = modified.into();
+
+        lists.push((
+            filename.to_string(),
+            version,
+            modified_chrono.format("%Y-%m-%d %H:%M").to_string(),
+        ));
+    }
+
+    if lists.is_empty() {
+        println!("no custom dat");
+        return Ok(());
+    }
+
+    lists.sort();
+    for (filename, version, modified) in lists {
+        println!("- {}", filename);
+        println!("  version: {}   modified: {}", version, modified);
+    }
+
+    Ok(())
+}

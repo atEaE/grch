@@ -49,6 +49,11 @@ pub fn ls() -> anyhow::Result<()> {
         ));
     }
 
+    if lists.is_empty() {
+        println!("no cache");
+        return Ok(());
+    }
+
     lists.sort();
     for (filename, version, modified) in lists {
         println!("- {}", filename);
