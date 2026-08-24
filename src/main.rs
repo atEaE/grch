@@ -37,6 +37,10 @@ enum Command {
         /// Ignore the cache and fetch the latest DAT file (the cache is updated)
         #[arg(long)]
         refresh: bool,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
     },
 
     /// Control the cache
@@ -89,7 +93,11 @@ fn main() -> anyhow::Result<()> {
 
     match args.command {
         Command::Crc { input, refresh } => commands::crc::run(&input, refresh)?,
-        Command::Rename { input, refresh } => commands::rename::run(&input, refresh)?,
+        Command::Rename {
+            input,
+            refresh,
+            yes,
+        } => commands::rename::run(&input, refresh, yes)?,
         Command::Cache { command } => match command {
             CacheCommand::Clean => commands::cache::clean()?,
             CacheCommand::Ls => commands::cache::ls()?,
