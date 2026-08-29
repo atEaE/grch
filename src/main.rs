@@ -5,6 +5,9 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod dat;
 mod dir;
+// gropingの検証をしたかったので先につくった（一旦dead_codeとして避けておく)
+#[allow(dead_code)]
+mod game;
 mod input;
 mod system;
 
