@@ -10,7 +10,7 @@ use crate::dat;
 use crate::input;
 use crate::system::System;
 
-pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
+pub fn run(input: &[PathBuf], refresh: bool, yes: bool) -> anyhow::Result<()> {
     let files = input::collect_files(input);
     if files.is_empty() {
         anyhow::bail!("no files matched");
@@ -78,14 +78,16 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    print!("Rename {} files? [y/N]: ", plan.len());
-    io::stdout().flush()?;
+    if !yes {
+        print!("Rename {} files? [y/N]: ", plan.len());
+        io::stdout().flush()?;
 
-    let mut answer = String::new();
-    io::stdin().lock().read_line(&mut answer)?;
-    if !matches!(answer.trim().to_lowercase().as_str(), "y" | "yes") {
-        println!("aborted");
-        return Ok(());
+        let mut answer = String::new();
+        io::stdin().lock().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_lowercase().as_str(), "y" | "yes") {
+            println!("aborted");
+            return Ok(());
+        }
     }
 
     for (from, to) in plan {
