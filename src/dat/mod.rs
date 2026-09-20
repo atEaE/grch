@@ -141,19 +141,21 @@ fn hex_array<const N: usize>(hex: &str) -> Option<[u8; N]> {
     Some(out)
 }
 
-/// Obtain the DAT file of the ROM corresponding to the target system
-fn fetch_body(system: &System) -> Result<String> {
-    let url = system.dat_url();
-    let mut res = ureq::get(&url).call()?;
+fn fetch_body(url: &str) -> Result<String> {
+    let mut res = ureq::get(url).call()?;
     let body = res.body_mut().read_to_string()?;
     Ok(body)
 }
 
-/// Load DAT file information of the target system
+/// Load the official DAT of the target system, or `None` if the system has no official DAT.
 /// If a cache exists, read from the cache unless refresh is set
-pub fn load(system: &System, refresh: bool) -> Result<Dat> {
-    let body = read_official_body(system, refresh)?;
-    parse(&body).with_context(|| format!("parse official DAT for {}", system.name()))
+pub fn load(system: &System, refresh: bool) -> Result<Option<Dat>> {
+    let Some(url) = system.dat_url() else {
+        return Ok(None);
+    };
+    let body = read_official_body(system, url, refresh)?;
+    let dat = parse(&body).with_context(|| format!("parse official DAT for {}", system.name()))?;
+    Ok(Some(dat))
 }
 
 /// Load custom DAT file information of the target system
@@ -168,19 +170,30 @@ pub fn load_custom(system: &System) -> Result<Option<Dat>> {
 /// Load with the official DAT and custom DAT merged.
 /// Entries from the custom DAT take priority over the official ones.
 pub fn load_merged(system: &System, refresh: bool) -> Result<Dat> {
-    let mut dat = load(system, refresh)?;
-    if let Some(custom) = load_custom(system)? {
-        dat.append(custom);
-    }
-    Ok(dat)
+    merge(system, load(system, refresh)?, load_custom(system)?)
 }
 
-fn read_official_body(system: &System, refresh: bool) -> Result<String> {
+fn merge(system: &System, official: Option<Dat>, custom: Option<Dat>) -> Result<Dat> {
+    match (official, custom) {
+        (Some(mut official), Some(custom)) => {
+            official.append(custom);
+            Ok(official)
+        }
+        (Some(official), None) => Ok(official),
+        (None, Some(custom)) => Ok(custom),
+        (None, None) => bail!(
+            "no DAT for {name}: register one with `grch dat add --system {name} -i <file>`",
+            name = system.name()
+        ),
+    }
+}
+
+fn read_official_body(system: &System, url: &str, refresh: bool) -> Result<String> {
     let dir = dir::romdat_cache_dir()?;
     if !refresh && let Some(body) = read_cache(&dir, system)? {
         return Ok(body);
     }
-    let body = fetch_body(system)?;
+    let body = fetch_body(url)?;
     write_cache(&dir, system, &body)?;
     Ok(body)
 }
@@ -470,6 +483,35 @@ mod tests {
         assert_eq!(name(0xA2545D33, 0x01), "Custom Name.gb");
         assert_eq!(name(0x90776841, 0x00), "Only Official.gb");
         assert_eq!(name(0x12345678, 0x00), "Only Custom.gb");
+    }
+
+    #[test]
+    fn merge_requires_at_least_one_dat() {
+        // arrange
+        let official = || {
+            let mut d = Dat::new(Some("official".to_string()));
+            d.push(entry("a.gb", 0x1, None));
+            d
+        };
+        let custom = || {
+            let mut d = Dat::new(Some("custom".to_string()));
+            d.push(entry("b.gb", 0x2, None));
+            d
+        };
+
+        // act & assert
+        let both = merge(&System::Gb, Some(official()), Some(custom())).unwrap();
+        assert_eq!(both.entries.len(), 2);
+        assert_eq!(both.version.as_deref(), Some("official"));
+
+        let only_official = merge(&System::Gb, Some(official()), None).unwrap();
+        assert_eq!(only_official.entries.len(), 1);
+
+        let only_custom = merge(&System::N3ds, None, Some(custom())).unwrap();
+        assert_eq!(only_custom.version.as_deref(), Some("custom"));
+
+        let err = merge(&System::N3ds, None, None).unwrap_err().to_string();
+        assert!(err.contains("dat add --system 3ds"), "{err}");
     }
 
     #[test]
