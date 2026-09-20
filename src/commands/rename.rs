@@ -7,6 +7,7 @@ use anyhow::Context;
 use colored::Colorize;
 
 use crate::dat;
+use crate::hash;
 use crate::input;
 use crate::system::System;
 
@@ -25,8 +26,8 @@ pub fn run(input: &[PathBuf], refresh: bool, yes: bool) -> anyhow::Result<()> {
 
     let mut dats = HashMap::new();
     for system in &systems {
-        let map = dat::load_merged(system, refresh)?;
-        dats.insert(*system, map);
+        let merged = dat::load_merged(system, refresh)?;
+        dats.insert(*system, merged);
     }
 
     let mut plan: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -38,13 +39,13 @@ pub fn run(input: &[PathBuf], refresh: bool, yes: bool) -> anyhow::Result<()> {
             continue;
         };
 
-        match fs::read(path) {
-            Ok(data) => {
-                let crc = crc32fast::hash(&data);
-                let Some(entry) = dats[&system].get(&crc) else {
+        match hash::hash_file(path) {
+            Ok(hashes) => {
+                let Some(found) = dats[&system].find(&hashes) else {
                     unknown += 1;
                     continue;
                 };
+                let entry = found.entry;
 
                 let new_path = new_path_for(path, &entry.name);
                 if *path != new_path {
