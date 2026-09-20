@@ -14,7 +14,7 @@ game rom managment tool
 Usage: grch <COMMAND>
 
 Commands:
-  crc     Check the CRC32 of the ROM file
+  check   Check the ROM file against the database
   rename  Rename to the official name registered in the ROM file database
   cache   Control the cache
   dat     Manage custom DAT files
