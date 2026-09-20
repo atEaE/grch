@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::PathBuf;
 
 use colored::Colorize;
 
 use crate::dat;
+use crate::hash;
 use crate::input;
 use crate::system::System;
 
@@ -34,15 +34,17 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
             continue;
         };
 
-        match fs::read(path) {
-            Ok(data) => {
-                let crc = crc32fast::hash(&data);
-                if let Some(entry) = dats[&system].find_by_crc(crc) {
+        match hash::hash_file(path) {
+            Ok(hashes) => {
+                if let Some(found) = dats[&system].find(&hashes) {
                     println!("{} {}", "✓".green(), filename);
-                    println!("   └ {:08X} | {}", entry.crc, entry.name);
+                    println!(
+                        "   └ {:08X} | {} ({})",
+                        found.entry.crc, found.entry.name, found.by
+                    );
                 } else {
                     println!("{} {}", "✗".red(), filename);
-                    println!("   └ {:08X} | (unknown crc)", crc);
+                    println!("   └ {:08X} | (no match)", hashes.crc);
                 }
             }
             Err(e) => {

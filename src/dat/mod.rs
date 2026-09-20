@@ -1,17 +1,17 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
 use crate::dir;
+use crate::hash::FileHashes;
 use crate::system::System;
 
 mod clrmamepro;
 mod logiqx;
 
-// size / md5 / serial are unused until file hashing produces more than CRC32.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatEntry {
     pub name: String,
@@ -29,7 +29,29 @@ pub struct Dat {
     pub version: Option<String>,
     pub entries: Vec<DatEntry>,
     by_crc: HashMap<u32, Vec<usize>>,
-    by_sha1: HashMap<[u8; 20], usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchedBy {
+    Sha1,
+    Md5,
+    Crc,
+}
+
+impl fmt::Display for MatchedBy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            MatchedBy::Sha1 => "sha1",
+            MatchedBy::Md5 => "md5",
+            MatchedBy::Crc => "crc",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Match<'a> {
+    pub entry: &'a DatEntry,
+    pub by: MatchedBy,
 }
 
 impl Dat {
@@ -38,16 +60,12 @@ impl Dat {
             version,
             entries: Vec::new(),
             by_crc: HashMap::new(),
-            by_sha1: HashMap::new(),
         }
     }
 
     pub fn push(&mut self, entry: DatEntry) {
         let index = self.entries.len();
         self.by_crc.entry(entry.crc).or_default().push(index);
-        if let Some(sha1) = entry.sha1 {
-            self.by_sha1.insert(sha1, index);
-        }
         self.entries.push(entry);
     }
 
@@ -65,14 +83,21 @@ impl Dat {
             .map(|&i| &self.entries[i])
     }
 
-    pub fn find_by_crc(&self, crc: u32) -> Option<&DatEntry> {
-        self.candidates_by_crc(crc).last()
-    }
-
-    // Unused until file hashing produces sha1.
-    #[allow(dead_code)]
-    pub fn find_by_sha1(&self, sha1: &[u8; 20]) -> Option<&DatEntry> {
-        self.by_sha1.get(sha1).map(|&i| &self.entries[i])
+    /// Match by crc and size, then confirm with sha1 or md5 when the entry has one.
+    pub fn find(&self, hashes: &FileHashes) -> Option<Match<'_>> {
+        self.candidates_by_crc(hashes.crc)
+            .filter(|e| e.size.is_none_or(|size| size == hashes.size))
+            .filter_map(|e| {
+                let by = match (e.sha1, e.md5) {
+                    (Some(sha1), _) if sha1 == hashes.sha1 => MatchedBy::Sha1,
+                    (Some(_), _) => return None,
+                    (None, Some(md5)) if md5 == hashes.md5 => MatchedBy::Md5,
+                    (None, Some(_)) => return None,
+                    (None, None) => MatchedBy::Crc,
+                };
+                Some(Match { entry: e, by })
+            })
+            .last()
     }
 }
 
@@ -260,6 +285,15 @@ mod tests {
         }
     }
 
+    fn hashes(crc: u32, size: u64, md5: u8, sha1: u8) -> FileHashes {
+        FileHashes {
+            size,
+            crc,
+            md5: [md5; 16],
+            sha1: [sha1; 20],
+        }
+    }
+
     #[test]
     fn detect_format_clrmamepro() {
         // act & assert
@@ -333,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn find_by_crc_returns_all_candidates_on_collision() {
+    fn candidates_by_crc_returns_all_on_collision() {
         // arrange
         let mut dat = Dat::new(None);
         dat.push(entry("first.gb", 0xAAAAAAAA, None));
@@ -348,22 +382,64 @@ mod tests {
 
         // assert
         assert_eq!(candidates, vec!["first.gb", "second.gb"]);
-        assert_eq!(dat.find_by_crc(0xAAAAAAAA).unwrap().name, "second.gb");
-        assert_eq!(dat.find_by_crc(0xBBBBBBBB).unwrap().name, "other.gb");
-        assert!(dat.find_by_crc(0xCCCCCCCC).is_none());
+        assert!(dat.candidates_by_crc(0xCCCCCCCC).next().is_none());
     }
 
     #[test]
-    fn find_by_sha1() {
+    fn find_confirms_with_sha1() {
         // arrange
-        let sha1 = [0x11u8; 20];
         let mut dat = Dat::new(None);
-        dat.push(entry("no-sha1.gb", 0x1, None));
-        dat.push(entry("with-sha1.gb", 0x2, Some(sha1)));
+        dat.push(DatEntry {
+            size: Some(3),
+            md5: Some([0x22; 16]),
+            ..entry("a.gb", 0x1, Some([0x11; 20]))
+        });
 
         // act & assert
-        assert_eq!(dat.find_by_sha1(&sha1).unwrap().name, "with-sha1.gb");
-        assert!(dat.find_by_sha1(&[0x22u8; 20]).is_none());
+        let found = dat.find(&hashes(0x1, 3, 0x22, 0x11)).unwrap();
+        assert_eq!(found.entry.name, "a.gb");
+        assert_eq!(found.by, MatchedBy::Sha1);
+        // crc collides but sha1 differs
+        assert!(dat.find(&hashes(0x1, 3, 0x22, 0x99)).is_none());
+        // size differs
+        assert!(dat.find(&hashes(0x1, 4, 0x22, 0x11)).is_none());
+        assert!(dat.find(&hashes(0x2, 3, 0x22, 0x11)).is_none());
+    }
+
+    #[test]
+    fn find_falls_back_to_md5_then_crc() {
+        // arrange
+        let mut dat = Dat::new(None);
+        dat.push(DatEntry {
+            md5: Some([0x22; 16]),
+            ..entry("md5-only.gb", 0x1, None)
+        });
+        dat.push(entry("crc-only.gb", 0x2, None));
+
+        // act & assert
+        let by_md5 = dat.find(&hashes(0x1, 3, 0x22, 0x00)).unwrap();
+        assert_eq!(by_md5.entry.name, "md5-only.gb");
+        assert_eq!(by_md5.by, MatchedBy::Md5);
+        assert!(dat.find(&hashes(0x1, 3, 0x99, 0x00)).is_none());
+
+        let by_crc = dat.find(&hashes(0x2, 3, 0x00, 0x00)).unwrap();
+        assert_eq!(by_crc.entry.name, "crc-only.gb");
+        assert_eq!(by_crc.by, MatchedBy::Crc);
+    }
+
+    #[test]
+    fn find_prefers_later_entry_on_collision() {
+        // arrange
+        let mut dat = Dat::new(None);
+        dat.push(entry("first.gb", 0x1, Some([0x11; 20])));
+        dat.push(entry("second.gb", 0x1, Some([0x11; 20])));
+        dat.push(entry("rejected.gb", 0x1, Some([0x99; 20])));
+
+        // act & assert
+        assert_eq!(
+            dat.find(&hashes(0x1, 0, 0, 0x11)).unwrap().entry.name,
+            "second.gb"
+        );
     }
 
     #[test]
@@ -383,21 +459,33 @@ mod tests {
         // assert
         assert_eq!(official.version.as_deref(), Some("2026.08.01"));
         assert_eq!(official.entries.len(), 4);
-        assert_eq!(
-            official.find_by_crc(0xA2545D33).unwrap().name,
-            "Custom Name.gb"
-        );
-        assert_eq!(
-            official.find_by_sha1(&[0x01; 20]).unwrap().name,
-            "Custom Name.gb"
-        );
-        assert_eq!(
-            official.find_by_crc(0x90776841).unwrap().name,
-            "Only Official.gb"
-        );
-        assert_eq!(
-            official.find_by_crc(0x12345678).unwrap().name,
-            "Only Custom.gb"
-        );
+        let name = |crc, sha1| {
+            official
+                .find(&hashes(crc, 0, 0, sha1))
+                .unwrap()
+                .entry
+                .name
+                .clone()
+        };
+        assert_eq!(name(0xA2545D33, 0x01), "Custom Name.gb");
+        assert_eq!(name(0x90776841, 0x00), "Only Official.gb");
+        assert_eq!(name(0x12345678, 0x00), "Only Custom.gb");
+    }
+
+    #[test]
+    fn append_custom_without_sha1_still_wins() {
+        // arrange
+        let mut official = Dat::new(None);
+        official.push(entry("Official Name.gb", 0x1, Some([0x11; 20])));
+        let mut custom = Dat::new(None);
+        custom.push(entry("Custom Name.gb", 0x1, None));
+
+        // act
+        official.append(custom);
+
+        // assert
+        let found = official.find(&hashes(0x1, 0, 0, 0x11)).unwrap();
+        assert_eq!(found.entry.name, "Custom Name.gb");
+        assert_eq!(found.by, MatchedBy::Crc);
     }
 }

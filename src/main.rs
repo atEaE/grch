@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod dat;
 mod dir;
+mod hash;
 mod input;
 mod system;
 

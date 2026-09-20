@@ -122,7 +122,7 @@ game (
         assert_eq!(dat.version, None);
         assert_eq!(dat.entries.len(), 2);
         {
-            let entry = dat.find_by_crc(0xA2545D33).unwrap();
+            let entry = dat.entries.iter().find(|e| e.crc == 0xA2545D33).unwrap();
             assert_eq!(
                 entry.name,
                 "Pocket Monsters - Pikachu (Japan) (Rev 1) (SGB Enhanced).gb"
@@ -130,7 +130,7 @@ game (
             assert_eq!(entry.serial, None);
         }
         {
-            let entry = dat.find_by_crc(0x90776841).unwrap();
+            let entry = dat.entries.iter().find(|e| e.crc == 0x90776841).unwrap();
             assert_eq!(entry.name, "Super Mario Land (World).gb");
             assert_eq!(entry.size, None);
             assert_eq!(entry.md5, None);
