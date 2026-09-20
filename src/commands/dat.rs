@@ -11,8 +11,9 @@ pub fn add(system: &System, input: &PathBuf) -> anyhow::Result<()> {
     let body = fs::read_to_string(input)
         .with_context(|| format!("failed to read DAT file: {}", input.display()))?;
 
-    let map = dat::parse_dat(&body);
-    if map.is_empty() {
+    let parsed = dat::parse(&body)
+        .with_context(|| format!("failed to parse DAT file: {}", input.display()))?;
+    if parsed.entries.is_empty() {
         bail!("no valid entries found in {}", input.display())
     }
 
@@ -22,7 +23,11 @@ pub fn add(system: &System, input: &PathBuf) -> anyhow::Result<()> {
     let path = data_dir.join(format!("{}.dat", system.name()));
     fs::write(path, body)?;
 
-    println!("registered {} entries for {}", map.len(), system.name());
+    println!(
+        "registered {} entries for {}",
+        parsed.entries.len(),
+        system.name()
+    );
     Ok(())
 }
 
@@ -51,7 +56,10 @@ pub fn ls() -> anyhow::Result<()> {
 
         let filename = path.file_name().unwrap_or(path.as_os_str()).display();
         let body = fs::read_to_string(&path)?;
-        let version = dat::extract_version(&body).unwrap_or_else(|| "-".to_string());
+        let version = dat::parse(&body)
+            .ok()
+            .and_then(|d| d.version)
+            .unwrap_or_else(|| "-".to_string());
         let modified = entry.metadata()?.modified()?;
         let modified_chrono: chrono::DateTime<chrono::Local> = modified.into();
 

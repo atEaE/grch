@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod dat;
 mod dir;
+mod hash;
 mod input;
 mod system;
 
@@ -17,8 +18,8 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Check the CRC32 of the ROM file
-    Crc {
+    /// Check the ROM file against the database
+    Check {
         /// Target rom file (ex. ./hoge/piyo.gba or ./piyo/hoge/*.gb)
         #[arg(short, long, num_args = 1.., required = true)]
         input: Vec<PathBuf>,
@@ -92,7 +93,7 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Command::Crc { input, refresh } => commands::crc::run(&input, refresh)?,
+        Command::Check { input, refresh } => commands::check::run(&input, refresh)?,
         Command::Rename {
             input,
             refresh,
