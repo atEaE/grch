@@ -23,8 +23,8 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
 
     let mut dats = HashMap::new();
     for system in &systems {
-        let map = dat::load_merged(system, refresh)?;
-        dats.insert(*system, map);
+        let merged = dat::load_merged(system, refresh)?;
+        dats.insert(*system, merged);
     }
 
     for path in &files {
@@ -37,7 +37,7 @@ pub fn run(input: &[PathBuf], refresh: bool) -> anyhow::Result<()> {
         match fs::read(path) {
             Ok(data) => {
                 let crc = crc32fast::hash(&data);
-                if let Some(entry) = dats[&system].get(&crc) {
+                if let Some(entry) = dats[&system].find_by_crc(crc) {
                     println!("{} {}", "✓".green(), filename);
                     println!("   └ {:08X} | {}", entry.crc, entry.name);
                 } else {

@@ -38,7 +38,10 @@ pub fn ls() -> anyhow::Result<()> {
 
         let filename = path.file_name().unwrap_or(path.as_os_str()).display();
         let body = fs::read_to_string(&path)?;
-        let version = dat::extract_version(&body).unwrap_or_else(|| "-".to_string());
+        let version = dat::parse(&body)
+            .ok()
+            .and_then(|d| d.version)
+            .unwrap_or_else(|| "-".to_string());
         let modified = entry.metadata()?.modified()?;
         let modified_chrono: chrono::DateTime<chrono::Local> = modified.into();
 

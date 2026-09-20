@@ -25,8 +25,8 @@ pub fn run(input: &[PathBuf], refresh: bool, yes: bool) -> anyhow::Result<()> {
 
     let mut dats = HashMap::new();
     for system in &systems {
-        let map = dat::load_merged(system, refresh)?;
-        dats.insert(*system, map);
+        let merged = dat::load_merged(system, refresh)?;
+        dats.insert(*system, merged);
     }
 
     let mut plan: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -41,7 +41,7 @@ pub fn run(input: &[PathBuf], refresh: bool, yes: bool) -> anyhow::Result<()> {
         match fs::read(path) {
             Ok(data) => {
                 let crc = crc32fast::hash(&data);
-                let Some(entry) = dats[&system].get(&crc) else {
+                let Some(entry) = dats[&system].find_by_crc(crc) else {
                     unknown += 1;
                     continue;
                 };
