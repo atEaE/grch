@@ -110,6 +110,11 @@ impl Selection {
         Ok(Selection { system, patterns })
     }
 
+    /// True when no `--system` and no PATTERN was given.
+    pub fn is_empty(&self) -> bool {
+        self.system.is_none() && self.patterns.is_empty()
+    }
+
     /// Patterns match the file name with or without its extension, ignoring case,
     /// so `pokemon*` finds "Pokemon - Red (Japan).gb" and `*.gb` still works.
     pub fn matches(&self, system: System, name: &str) -> bool {
@@ -281,6 +286,8 @@ mod tests {
         assert!(!ext.matches(System::Sfc, "Tetris (Japan).sfc"));
         assert!(sys.matches(System::Gb, "anything"));
         assert!(!sys.matches(System::Sfc, "anything"));
+        assert!(Selection::default().is_empty());
+        assert!(!sys.is_empty());
         assert!(Selection::parse(None, &["[".to_string()]).is_err());
     }
 }

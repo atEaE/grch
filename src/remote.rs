@@ -26,13 +26,6 @@ impl std::error::Error for ManifestConflict {}
 
 /// Storage backend. Objects are named by the caller (sha256 hex of the archive); the
 /// manifest is a single blob with a revision so concurrent pushes can be detected.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "transfer methods are consumed by push / pull, not implemented yet"
-    )
-)]
 pub trait Remote {
     /// Human-readable description for `remote info` (account, folder, quota).
     fn describe(&self) -> Result<String>;
