@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+mod archive;
 mod commands;
 mod dat;
 mod dir;
@@ -9,6 +10,7 @@ mod hash;
 mod index;
 mod input;
 mod library;
+mod password;
 mod system;
 
 #[derive(Parser)]
@@ -65,6 +67,34 @@ enum Command {
     Init {
         /// Library root (default: current directory)
         dir: Option<PathBuf>,
+    },
+
+    /// Debug: pack / unpack a single file the way sync does
+    #[command(hide = true)]
+    Archive {
+        #[command(subcommand)]
+        command: ArchiveCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ArchiveCommand {
+    /// Pack one file into an encrypted 7z
+    Pack {
+        #[arg(short, long)]
+        input: PathBuf,
+
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+
+    /// Extract an encrypted 7z into a directory
+    Unpack {
+        #[arg(short, long)]
+        input: PathBuf,
+
+        #[arg(short, long)]
+        output: PathBuf,
     },
 }
 
@@ -124,6 +154,10 @@ fn main() -> anyhow::Result<()> {
             };
             commands::init::run(&dir)?
         }
+        Command::Archive { command } => match command {
+            ArchiveCommand::Pack { input, output } => commands::archive::pack(&input, &output)?,
+            ArchiveCommand::Unpack { input, output } => commands::archive::unpack(&input, &output)?,
+        },
     }
     Ok(())
 }
