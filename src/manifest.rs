@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::archive;
+use crate::password;
+use crate::remote::{Remote, Rev};
 use crate::system::System;
 
 const VERSION: u32 = 1;
@@ -51,6 +53,16 @@ impl Default for Manifest {
 }
 
 impl Manifest {
+    /// Download and decrypt the remote manifest. `None` when nothing has been pushed yet.
+    /// The password is only asked for when there is something to decrypt.
+    pub fn fetch(remote: &dyn Remote) -> Result<Option<(Manifest, Rev)>> {
+        let Some((bytes, rev)) = remote.get_manifest()? else {
+            return Ok(None);
+        };
+        let manifest = Manifest::from_encrypted(&bytes, &password::resolve()?)?;
+        Ok(Some((manifest, rev)))
+    }
+
     pub fn from_encrypted(bytes: &[u8], password: &str) -> Result<Manifest> {
         let (_, body) = archive::unpack_bytes(bytes, password).context("decrypt manifest")?;
         serde_json::from_slice(&body).context("parse manifest")

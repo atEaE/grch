@@ -110,6 +110,15 @@ enum RemoteCommand {
     Logout,
     /// Show the remote, account and manifest summary
     Info,
+    /// List files on the remote (✓ = present on this machine)
+    Ls {
+        /// Limit to one system
+        #[arg(long)]
+        system: Option<system::System>,
+
+        /// Limit to files matching these globs (name with or without extension)
+        pattern: Vec<String>,
+    },
     /// Set or change the stored archive password
     Password,
 }
@@ -195,6 +204,7 @@ fn main() -> anyhow::Result<()> {
             RemoteCommand::Login => commands::remote::login()?,
             RemoteCommand::Logout => commands::remote::logout()?,
             RemoteCommand::Info => commands::remote::info()?,
+            RemoteCommand::Ls { system, pattern } => commands::remote::ls(system, &pattern)?,
             RemoteCommand::Password => commands::remote::set_password()?,
         },
         Command::Status { system, pattern } => commands::status::run(system, &pattern)?,

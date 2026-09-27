@@ -5,6 +5,8 @@ use crate::library::Library;
 use crate::manifest::Manifest;
 use crate::password;
 use crate::remote::{self, dropbox};
+use crate::sync::Selection;
+use crate::system::System;
 
 fn current_library() -> anyhow::Result<Library> {
     Library::discover(&std::env::current_dir()?)
@@ -69,10 +71,9 @@ pub fn info() -> anyhow::Result<()> {
     };
     println!("archive password: {password_source}");
 
-    match remote.get_manifest()? {
+    match Manifest::fetch(remote.as_ref())? {
         None => println!("manifest: none (nothing pushed yet)"),
-        Some((bytes, _)) => {
-            let manifest = Manifest::from_encrypted(&bytes, &password::resolve()?)?;
+        Some((manifest, _)) => {
             println!(
                 "manifest: {} roms, updated {} by {}",
                 manifest.roms.len(),
@@ -82,4 +83,88 @@ pub fn info() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// List what the remote holds, marking files already present on this machine.
+pub fn ls(system: Option<System>, patterns: &[String]) -> anyhow::Result<()> {
+    let selection = Selection::parse(system, patterns)?;
+    let library = current_library()?;
+    let remote = remote::open(&library.config.remote)?;
+    let Some((manifest, _)) = Manifest::fetch(remote.as_ref())? else {
+        println!("remote has no manifest yet (nothing pushed)");
+        return Ok(());
+    };
+
+    let mut entries: Vec<_> = manifest
+        .roms
+        .iter()
+        .filter(|e| selection.matches(e.system, &e.name))
+        .collect();
+    if entries.is_empty() {
+        println!("no matching files on the remote");
+        return Ok(());
+    }
+    entries.sort_by(|a, b| (a.system, &a.name).cmp(&(b.system, &b.name)));
+
+    let mut total_size = 0;
+    let mut present = 0;
+    let mut current: Option<System> = None;
+    for entry in &entries {
+        if current != Some(entry.system) {
+            if current.is_some() {
+                println!();
+            }
+            let count = entries.iter().filter(|e| e.system == entry.system).count();
+            println!("{} ({})", entry.system.name().bold(), count);
+            current = Some(entry.system);
+        }
+        let here = library.system_dir(entry.system).join(&entry.name).is_file();
+        let mark = if here { "✓".green() } else { " ".normal() };
+        println!(
+            "  {} {}  {}",
+            mark,
+            entry.name,
+            human_size(entry.size).dimmed()
+        );
+        total_size += entry.size;
+        present += usize::from(here);
+    }
+    println!();
+    println!(
+        "{} files, {} ({} on this machine)",
+        entries.len(),
+        human_size(total_size),
+        present
+    );
+    Ok(())
+}
+
+fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1000.0 && unit < UNITS.len() - 1 {
+        value /= 1000.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{} {}", bytes, UNITS[0])
+    } else {
+        format!("{:.1} {}", value, UNITS[unit])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn human_size_uses_decimal_units() {
+        // act & assert
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(999), "999 B");
+        assert_eq!(human_size(1000), "1.0 KB");
+        assert_eq!(human_size(4_194_304), "4.2 MB");
+        assert_eq!(human_size(1_500_000_000), "1.5 GB");
+    }
 }
