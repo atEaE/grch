@@ -194,7 +194,10 @@ mod tests {
         let path = temp.path().join("SFC").join("a.sfc");
         fs::write(&path, b"abd").unwrap();
         let later = SystemTime::now() + Duration::from_secs(10);
-        fs::File::open(&path).unwrap().set_modified(later).unwrap();
+
+        // Windows rejects set_modified on a read-only handle, so open for writing.
+        let file = fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(later).unwrap();
 
         // act
         let hashed = index.refresh(&library.scan().unwrap()).unwrap();
