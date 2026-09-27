@@ -22,6 +22,24 @@ pub fn hash_file(path: &Path) -> Result<FileHashes> {
     hash_reader(file, BUF_LEN)
 }
 
+/// crc32 only. The sync index identifies files by size + crc32, so computing md5 / sha1
+/// as `hash_file` does would be wasted work, and it adds up on PSP ISOs (~1GB each).
+pub fn crc32_file(path: &Path) -> Result<u32> {
+    let mut file = File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut buf = vec![0u8; BUF_LEN];
+    let mut crc = crc32fast::Hasher::new();
+    loop {
+        let n = match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e.into()),
+        };
+        crc.update(&buf[..n]);
+    }
+    Ok(crc.finalize())
+}
+
 fn hash_reader(mut reader: impl Read, buf_len: usize) -> Result<FileHashes> {
     let mut buf = vec![0u8; buf_len];
     let mut size = 0u64;
@@ -103,6 +121,17 @@ mod tests {
                 ],
             }
         );
+    }
+
+    #[test]
+    fn crc32_file_matches_hash_file() {
+        // arrange
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("abc");
+        fs::write(&path, b"abc").unwrap();
+
+        // act & assert
+        assert_eq!(crc32_file(&path).unwrap(), hash_file(&path).unwrap().crc);
     }
 
     #[test]

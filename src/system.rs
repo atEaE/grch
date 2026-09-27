@@ -1,7 +1,13 @@
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
+// serde names are pinned to the same strings as `name()` so that config / index / manifest
+// files use the CLI spelling ("3ds", not "N3ds").
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, ValueEnum, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum System {
     /// Game Boy
     Gb,
@@ -17,6 +23,7 @@ pub enum System {
     // Rust identifiers cannot start with a digit, so the variant is `N3ds`.
     // The CLI value is pinned to "3ds" so that `--system 3ds` matches the file extension.
     #[value(name = "3ds")]
+    #[serde(rename = "3ds")]
     N3ds,
     /// PlayStation Portable
     Psp,
@@ -33,6 +40,20 @@ impl System {
             System::Nds => "nds",
             System::N3ds => "3ds",
             System::Psp => "psp",
+        }
+    }
+
+    /// Default folder name under a library root. Matches the layout the library was
+    /// organized with before sync existed: upper-cased system name, except DS.
+    pub fn default_dir_name(&self) -> &'static str {
+        match self {
+            System::Gb => "GB",
+            System::Gbc => "GBC",
+            System::Gba => "GBA",
+            System::Sfc => "SFC",
+            System::Nds => "DS",
+            System::N3ds => "3DS",
+            System::Psp => "PSP",
         }
     }
 
@@ -140,6 +161,17 @@ mod tests {
         for system in System::value_variants() {
             let expected_none = matches!(system, System::Nds | System::N3ds);
             assert_eq!(system.dat_url().is_none(), expected_none, "{:?}", system);
+        }
+    }
+
+    #[test]
+    fn serde_name_matches_system_name() {
+        // arrange & act & assert
+        for system in System::value_variants() {
+            let json = serde_json::to_string(system).unwrap();
+            assert_eq!(json, format!("\"{}\"", system.name()));
+            let back: System = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, *system);
         }
     }
 
