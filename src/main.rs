@@ -6,7 +6,9 @@ mod commands;
 mod dat;
 mod dir;
 mod hash;
+mod index;
 mod input;
+mod library;
 mod system;
 
 #[derive(Parser)]
@@ -58,6 +60,12 @@ enum Command {
 
     /// Show grch information
     Info,
+
+    /// Initialize a library root for cloud sync (creates .grch/)
+    Init {
+        /// Library root (default: current directory)
+        dir: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -109,6 +117,13 @@ fn main() -> anyhow::Result<()> {
             DatCommand::Ls => commands::dat::ls()?,
         },
         Command::Info => commands::info::run()?,
+        Command::Init { dir } => {
+            let dir = match dir {
+                Some(dir) => dir,
+                None => std::env::current_dir()?,
+            };
+            commands::init::run(&dir)?
+        }
     }
     Ok(())
 }
