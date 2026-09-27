@@ -3,7 +3,6 @@ use colored::Colorize;
 use crate::index::Index;
 use crate::library::Library;
 use crate::manifest::Manifest;
-use crate::password;
 use crate::remote;
 use crate::sync::{self, Action, Change, Selection};
 use crate::system::System;
@@ -20,8 +19,8 @@ pub fn run(system: Option<System>, patterns: &[String]) -> anyhow::Result<()> {
         eprintln!("hashed {} changed files", hashed);
     }
 
-    let manifest = match remote.get_manifest()? {
-        Some((bytes, _rev)) => Manifest::from_encrypted(&bytes, &password::resolve()?)?,
+    let manifest = match Manifest::fetch(remote.as_ref())? {
+        Some((manifest, _rev)) => manifest,
         None => {
             println!("remote has no manifest yet (nothing pushed)");
             Manifest::default()
