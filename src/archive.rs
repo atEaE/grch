@@ -42,10 +42,6 @@ pub fn pack_file(src: &Path, entry_name: &str, dest: &Path, password: &str) -> R
 }
 
 /// Pack an in-memory blob (the manifest) the same way as a file.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by push, which is not implemented yet")
-)]
 pub fn pack_bytes(entry_name: &str, data: &[u8], password: &str) -> Result<Vec<u8>> {
     let mut out = Cursor::new(Vec::new());
     write_archive(&mut out, entry_name, data, password)?;

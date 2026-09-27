@@ -14,10 +14,6 @@ pub type Rev = String;
 
 /// Returned by `put_manifest` when the remote manifest changed since `expect` was read.
 #[derive(Debug)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "raised for push, which is not implemented yet")
-)]
 pub struct ManifestConflict;
 
 impl fmt::Display for ManifestConflict {
