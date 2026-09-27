@@ -5,6 +5,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use md5::{Digest, Md5};
 use sha1::Sha1;
+use sha2::Sha256;
 
 const BUF_LEN: usize = 1 << 20;
 
@@ -38,6 +39,27 @@ pub fn crc32_file(path: &Path) -> Result<u32> {
         crc.update(&buf[..n]);
     }
     Ok(crc.finalize())
+}
+
+/// sha256 as lowercase hex. Names archives on the remote, so the title never appears there.
+pub fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut buf = vec![0u8; BUF_LEN];
+    let mut sha = Sha256::new();
+    loop {
+        let n = match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e.into()),
+        };
+        sha.update(&buf[..n]);
+    }
+    Ok(sha
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect())
 }
 
 fn hash_reader(mut reader: impl Read, buf_len: usize) -> Result<FileHashes> {
@@ -132,6 +154,20 @@ mod tests {
 
         // act & assert
         assert_eq!(crc32_file(&path).unwrap(), hash_file(&path).unwrap().crc);
+    }
+
+    #[test]
+    fn sha256_file_known_vector() {
+        // arrange
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("abc");
+        fs::write(&path, b"abc").unwrap();
+
+        // act & assert
+        assert_eq!(
+            sha256_file(&path).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]
