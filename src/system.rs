@@ -1,7 +1,13 @@
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
+// serde names are pinned to the same strings as `name()` so that config / index / manifest
+// files use the CLI spelling ("3ds", not "N3ds").
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, ValueEnum, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum System {
     /// Game Boy
     Gb,
@@ -17,6 +23,7 @@ pub enum System {
     // Rust identifiers cannot start with a digit, so the variant is `N3ds`.
     // The CLI value is pinned to "3ds" so that `--system 3ds` matches the file extension.
     #[value(name = "3ds")]
+    #[serde(rename = "3ds")]
     N3ds,
     /// PlayStation Portable
     Psp,
@@ -33,6 +40,20 @@ impl System {
             System::Nds => "nds",
             System::N3ds => "3ds",
             System::Psp => "psp",
+        }
+    }
+
+    /// Default folder name under a library root. Matches the layout the library was
+    /// organized with before sync existed: upper-cased system name, except DS.
+    pub fn default_dir_name(&self) -> &'static str {
+        match self {
+            System::Gb => "GB",
+            System::Gbc => "GBC",
+            System::Gba => "GBA",
+            System::Sfc => "SFC",
+            System::Nds => "DS",
+            System::N3ds => "3DS",
+            System::Psp => "PSP",
         }
     }
 
@@ -56,21 +77,37 @@ impl System {
         }
     }
 
-    /// Obtain the DAT file corresponding to the system from https://github.com/libretro/libretro-database .
-    pub fn dat_url(&self) -> String {
+    /// URL of the official DAT from https://github.com/libretro/libretro-database .
+    /// `None` means the system has no official DAT and relies on a custom DAT.
+    pub fn dat_url(&self) -> Option<&'static str> {
         match self {
-            System::Gb => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy.dat".to_string(),
-            System::Gbc => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Color.dat".to_string(),
-			System::Gba => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Advance.dat".to_string(),
-            System::Sfc => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System.dat".to_string(),
-            System::Nds => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Nintendo%20DS.dat".to_string(),
-            System::N3ds => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Nintendo%203DS.dat".to_string(),
+            System::Gb => Some(
+                "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy.dat",
+            ),
+            System::Gbc => Some(
+                "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Color.dat",
+            ),
+            System::Gba => Some(
+                "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Advance.dat",
+            ),
+            System::Sfc => Some(
+                "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System.dat",
+            ),
+            // libretro-database builds its DS / 3DS DATs from the No-Intro "(Decrypted)" sets
+            // (see dats.json in robloach/libretro-dats). Cartridges dumped with GodMode9 are
+            // encrypted (its cart reads apply no decryption), and decrypted copies are trimmed
+            // or not depending on the tool, so the Decrypted sets rarely match real files.
+            // The No-Intro "(Encrypted)" sets cannot be redistributed, so users register one
+            // themselves with `dat add`.
+            System::Nds | System::N3ds => None,
             // Redump is used instead of No-Intro: the No-Intro PSP DAT has not been updated since 2021-10
             // (No-Intro defers disc-based systems to Redump), while the Redump DAT is maintained.
             // Redump lists the same ISO once per serial, so duplicate (name, crc) lines are expected.
             // Compressed images (.cso) cannot be matched because their CRC differs from the ISO.
-            System::Psp => "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/redump/Sony%20-%20PlayStation%20Portable.dat".to_string(),
-		}
+            System::Psp => Some(
+                "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/redump/Sony%20-%20PlayStation%20Portable.dat",
+            ),
+        }
     }
 }
 
@@ -116,6 +153,26 @@ mod tests {
 
         // act & assert
         assert_eq!(System::from_path(none_ext_path), None);
+    }
+
+    #[test]
+    fn dat_url_is_none_only_for_ds_and_3ds() {
+        // act & assert
+        for system in System::value_variants() {
+            let expected_none = matches!(system, System::Nds | System::N3ds);
+            assert_eq!(system.dat_url().is_none(), expected_none, "{:?}", system);
+        }
+    }
+
+    #[test]
+    fn serde_name_matches_system_name() {
+        // arrange & act & assert
+        for system in System::value_variants() {
+            let json = serde_json::to_string(system).unwrap();
+            assert_eq!(json, format!("\"{}\"", system.name()));
+            let back: System = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, *system);
+        }
     }
 
     #[test]

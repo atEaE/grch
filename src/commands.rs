@@ -1,5 +1,11 @@
+pub mod archive;
 pub mod cache;
-pub mod crc;
+pub mod check;
 pub mod dat;
 pub mod info;
+pub mod init;
+pub mod pull;
+pub mod push;
+pub mod remote;
 pub mod rename;
+pub mod status;
