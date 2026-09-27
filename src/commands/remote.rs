@@ -7,7 +7,7 @@ use crate::manifest::{self, Manifest};
 use crate::password;
 use crate::prompt;
 use crate::remote::{self, ManifestConflict, dropbox};
-use crate::sync::Selection;
+use crate::sync::{Kind, Selection};
 use crate::system::System;
 
 /// Attempts at updating the manifest when other machines keep pushing in between.
@@ -105,7 +105,7 @@ pub fn ls(system: Option<System>, patterns: &[String]) -> anyhow::Result<()> {
         .iter()
         .filter(|e| selection.matches(e.system, &e.name))
         .collect();
-    if entries.is_empty() {
+    if entries.is_empty() && manifest.dats.is_empty() {
         println!("no matching files on the remote");
         return Ok(());
     }
@@ -134,6 +134,28 @@ pub fn ls(system: Option<System>, patterns: &[String]) -> anyhow::Result<()> {
         total_size += entry.size;
         present += usize::from(here);
     }
+    let dats: Vec<_> = manifest
+        .dats
+        .iter()
+        .filter(|e| selection.matches(e.system, &e.name))
+        .collect();
+    if !dats.is_empty() {
+        println!();
+        println!("{} ({})", "dat".bold(), dats.len());
+        for entry in &dats {
+            let here = library
+                .local_path(Kind::Dat, entry.system, &entry.name)?
+                .is_file();
+            let mark = if here { "✓".green() } else { " ".normal() };
+            println!(
+                "  {} {}  {}",
+                mark,
+                entry.name,
+                human_size(entry.size).dimmed()
+            );
+        }
+    }
+
     println!();
     println!(
         "{} files, {} ({} on this machine)",

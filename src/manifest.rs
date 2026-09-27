@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::archive;
 use crate::password;
 use crate::remote::{Remote, Rev};
+use crate::sync::Kind;
 use crate::system::System;
 
 const VERSION: u32 = 1;
@@ -49,6 +50,34 @@ impl Default for Manifest {
 }
 
 impl Manifest {
+    pub fn entries(&self, kind: Kind) -> &[Entry] {
+        match kind {
+            Kind::Rom => &self.roms,
+            Kind::Dat => &self.dats,
+        }
+    }
+
+    pub fn entries_mut(&mut self, kind: Kind) -> &mut Vec<Entry> {
+        match kind {
+            Kind::Rom => &mut self.roms,
+            Kind::Dat => &mut self.dats,
+        }
+    }
+
+    pub fn find(&self, kind: Kind, system: System, name: &str) -> Option<&Entry> {
+        self.entries(kind)
+            .iter()
+            .find(|e| e.system == system && e.name == name)
+    }
+
+    /// Every object the manifest references, across both sections.
+    pub fn objects(&self) -> impl Iterator<Item = &str> {
+        self.roms
+            .iter()
+            .chain(self.dats.iter())
+            .map(|e| e.object.as_str())
+    }
+
     /// Download and decrypt the remote manifest. `None` when nothing has been pushed yet.
     /// The password is only asked for when there is something to decrypt.
     pub fn fetch(remote: &dyn Remote) -> Result<Option<(Manifest, Rev)>> {

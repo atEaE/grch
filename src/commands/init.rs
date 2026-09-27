@@ -44,11 +44,12 @@ pub fn run(dir: &Path, local: Option<&Path>) -> anyhow::Result<()> {
         );
     }
 
-    let files = library.scan()?;
-    let mut index = Index::load(&library)?;
-    let hashed = index.refresh(&files)?;
-    index.save(&library)?;
     println!();
-    println!("indexed {} files ({} hashed)", index.roms.len(), hashed);
+    let index = Index::load_refreshed(&library)?;
+    println!(
+        "indexed {} files, {} custom DATs",
+        index.roms.len(),
+        index.dats.len()
+    );
     Ok(())
 }

@@ -209,6 +209,51 @@ pub fn read_custom_body(system: &System) -> Result<Option<String>> {
     Ok(Some(body))
 }
 
+/// Custom DATs on this machine as sync inputs: `<system>.dat` files under `custom_dat/`.
+/// Files whose stem is not a system name are ignored.
+pub fn scan_custom() -> Result<Vec<crate::library::ScannedFile>> {
+    use clap::ValueEnum;
+    use std::time::UNIX_EPOCH;
+
+    let dir = dir::custom_dat_dir()?;
+    let mut files = Vec::new();
+    if !dir.is_dir() {
+        return Ok(files);
+    }
+    for entry in fs::read_dir(&dir)?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("dat") {
+            continue;
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let Some(system) = System::value_variants()
+            .iter()
+            .find(|s| s.name() == stem)
+            .copied()
+        else {
+            continue;
+        };
+        let metadata = entry.metadata()?;
+        if !metadata.is_file() {
+            continue;
+        }
+        let mtime = metadata
+            .modified()?
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        files.push(crate::library::ScannedFile {
+            system,
+            name: format!("{}.dat", system.name()),
+            path,
+            size: metadata.len(),
+            mtime,
+        });
+    }
+    files.sort_by_key(|f| f.system);
+    Ok(files)
+}
+
 /// Generate a .DAT file path for caching
 fn dat_path(dir: &Path, system: &System) -> PathBuf {
     dir.join(format!("{}.dat", system.name()))
