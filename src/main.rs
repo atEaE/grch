@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 
 mod archive;
 mod commands;
+mod credentials;
 mod dat;
 mod dir;
 mod hash;
@@ -77,6 +78,12 @@ enum Command {
         local: Option<PathBuf>,
     },
 
+    /// Remote account and credentials
+    Remote {
+        #[command(subcommand)]
+        command: RemoteCommand,
+    },
+
     /// Show what push / pull would transfer (no transfer)
     Status {
         /// Limit to one system
@@ -93,6 +100,18 @@ enum Command {
         #[command(subcommand)]
         command: ArchiveCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum RemoteCommand {
+    /// Authorize this machine with the remote and store the archive password
+    Login,
+    /// Remove the remote token and archive password from this machine
+    Logout,
+    /// Show the remote, account and manifest summary
+    Info,
+    /// Set or change the stored archive password
+    Password,
 }
 
 #[derive(Subcommand)]
@@ -172,6 +191,12 @@ fn main() -> anyhow::Result<()> {
             };
             commands::init::run(&dir, local.as_deref())?
         }
+        Command::Remote { command } => match command {
+            RemoteCommand::Login => commands::remote::login()?,
+            RemoteCommand::Logout => commands::remote::logout()?,
+            RemoteCommand::Info => commands::remote::info()?,
+            RemoteCommand::Password => commands::remote::set_password()?,
+        },
         Command::Status { system, pattern } => commands::status::run(system, &pattern)?,
         Command::Archive { command } => match command {
             ArchiveCommand::Pack { input, output } => commands::archive::pack(&input, &output)?,
