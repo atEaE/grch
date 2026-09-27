@@ -80,13 +80,35 @@ enum Command {
         local: Option<PathBuf>,
     },
 
-    /// Remote account and credentials
-    Remote {
-        #[command(subcommand)]
-        command: RemoteCommand,
+    /// Show what push / pull would transfer (no transfer)
+    Status {
+        /// Limit to one system
+        #[arg(long)]
+        system: Option<system::System>,
+
+        /// Limit to files matching these globs (name with or without extension)
+        pattern: Vec<String>,
     },
 
-    /// Download from the remote: files already here by default, more with --all / --system / PATTERN
+    /// Upload local additions and changes to the remote
+    Push {
+        /// Limit to one system
+        #[arg(long)]
+        system: Option<system::System>,
+
+        /// Limit to files matching these globs (name with or without extension)
+        pattern: Vec<String>,
+
+        /// Show what would be pushed without transferring
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip confirmation prompts (conflicts are resolved in favor of local files)
+        #[arg(short, long)]
+        yes: bool,
+    },
+
+    /// Download from the remote (only files already here, unless --all / --system / PATTERN)
     Pull {
         /// Fetch everything on the remote
         #[arg(long)]
@@ -108,32 +130,10 @@ enum Command {
         yes: bool,
     },
 
-    /// Upload local additions and changes to the remote
-    Push {
-        /// Limit to one system
-        #[arg(long)]
-        system: Option<system::System>,
-
-        /// Limit to files matching these globs (name with or without extension)
-        pattern: Vec<String>,
-
-        /// Show what would be pushed without transferring
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Skip confirmation prompts (conflicts are resolved in favor of local files)
-        #[arg(short, long)]
-        yes: bool,
-    },
-
-    /// Show what push / pull would transfer (no transfer)
-    Status {
-        /// Limit to one system
-        #[arg(long)]
-        system: Option<system::System>,
-
-        /// Limit to files matching these globs (name with or without extension)
-        pattern: Vec<String>,
+    /// Remote account and credentials
+    Remote {
+        #[command(subcommand)]
+        command: RemoteCommand,
     },
 
     /// Debug: pack / unpack a single file the way sync does
