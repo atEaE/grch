@@ -313,25 +313,23 @@ impl Dropbox {
             let n = read_full(file, &mut buf)?;
             let chunk = &buf[..n];
             let last = offset + n as u64 >= size;
-            let endpoint;
-            let arg;
-            match (&session_id, last) {
-                (None, _) => {
-                    endpoint = "files/upload_session/start";
-                    arg = serde_json::json!({ "close": last });
-                }
-                (Some(id), false) => {
-                    endpoint = "files/upload_session/append_v2";
-                    arg = serde_json::json!({ "cursor": { "session_id": id, "offset": offset } });
-                }
-                (Some(id), true) => {
-                    endpoint = "files/upload_session/finish";
-                    arg = serde_json::json!({
+            let (endpoint, arg) = match (&session_id, last) {
+                (None, _) => (
+                    "files/upload_session/start",
+                    serde_json::json!({ "close": last }),
+                ),
+                (Some(id), false) => (
+                    "files/upload_session/append_v2",
+                    serde_json::json!({ "cursor": { "session_id": id, "offset": offset } }),
+                ),
+                (Some(id), true) => (
+                    "files/upload_session/finish",
+                    serde_json::json!({
                         "cursor": { "session_id": id, "offset": offset },
                         "commit": { "path": path, "mode": "overwrite" },
-                    });
-                }
-            }
+                    }),
+                ),
+            };
             let mut res = self.content(endpoint, &arg, Body::Bytes(chunk))?;
             check_ok(&mut res, endpoint)?;
             if session_id.is_none() {
