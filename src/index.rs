@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::hash;
 use crate::library::{Library, ScannedFile};
+use crate::sync::Kind;
 use crate::system::System;
 
 const VERSION: u32 = 1;
@@ -18,6 +19,9 @@ const VERSION: u32 = 1;
 pub struct Index {
     pub version: u32,
     pub roms: Vec<Entry>,
+    /// Custom DATs from `custom_dat/`, keyed by system like ROMs.
+    #[serde(default)]
+    pub dats: Vec<Entry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +52,7 @@ impl Default for Index {
         Index {
             version: VERSION,
             roms: Vec::new(),
+            dats: Vec::new(),
         }
     }
 }
@@ -68,39 +73,68 @@ impl Index {
         fs::write(&path, body).with_context(|| format!("write {}", path.display()))
     }
 
-    /// Rebuild the entry list from a scan. crc32 is reused when size and mtime are unchanged
+    pub fn entries_mut(&mut self, kind: Kind) -> &mut Vec<Entry> {
+        match kind {
+            Kind::Rom => &mut self.roms,
+            Kind::Dat => &mut self.dats,
+        }
+    }
+
+    pub fn find_mut(&mut self, kind: Kind, system: System, name: &str) -> Option<&mut Entry> {
+        self.entries_mut(kind)
+            .iter_mut()
+            .find(|e| e.system == system && e.name == name)
+    }
+
+    /// Load, scan the library and `custom_dat/`, refresh and save. Reports hashed files.
+    pub fn load_refreshed(library: &Library) -> Result<Index> {
+        let mut index = Index::load(library)?;
+        let hashed = index.refresh(&library.scan()?, &crate::dat::scan_custom()?)?;
+        index.save(library)?;
+        if hashed > 0 {
+            eprintln!("hashed {} changed files", hashed);
+        }
+        Ok(index)
+    }
+
+    /// Rebuild both lists from scans. crc32 is reused when size and mtime are unchanged
     /// and recomputed otherwise; sync state is carried over by (system, name).
     /// Returns the number of files that were hashed.
-    pub fn refresh(&mut self, scanned: &[ScannedFile]) -> Result<usize> {
-        let previous: HashMap<(System, &str), &Entry> = self
-            .roms
-            .iter()
-            .map(|e| ((e.system, e.name.as_str()), e))
-            .collect();
-
-        let mut hashed = 0;
-        let mut roms = Vec::with_capacity(scanned.len());
-        for file in scanned {
-            let prev = previous.get(&(file.system, file.name.as_str())).copied();
-            let crc32 = match prev {
-                Some(p) if p.size == file.size && p.mtime == file.mtime => p.crc32,
-                _ => {
-                    hashed += 1;
-                    crc32_of(&file.path)?
-                }
-            };
-            roms.push(Entry {
-                system: file.system,
-                name: file.name.clone(),
-                size: file.size,
-                mtime: file.mtime,
-                crc32,
-                synced: prev.and_then(|p| p.synced.clone()),
-            });
-        }
-        self.roms = roms;
-        Ok(hashed)
+    pub fn refresh(&mut self, roms: &[ScannedFile], dats: &[ScannedFile]) -> Result<usize> {
+        let hashed_roms = refresh_list(&mut self.roms, roms)?;
+        let hashed_dats = refresh_list(&mut self.dats, dats)?;
+        Ok(hashed_roms + hashed_dats)
     }
+}
+
+fn refresh_list(list: &mut Vec<Entry>, scanned: &[ScannedFile]) -> Result<usize> {
+    let previous: HashMap<(System, &str), &Entry> = list
+        .iter()
+        .map(|e| ((e.system, e.name.as_str()), e))
+        .collect();
+
+    let mut hashed = 0;
+    let mut entries = Vec::with_capacity(scanned.len());
+    for file in scanned {
+        let prev = previous.get(&(file.system, file.name.as_str())).copied();
+        let crc32 = match prev {
+            Some(p) if p.size == file.size && p.mtime == file.mtime => p.crc32,
+            _ => {
+                hashed += 1;
+                crc32_of(&file.path)?
+            }
+        };
+        entries.push(Entry {
+            system: file.system,
+            name: file.name.clone(),
+            size: file.size,
+            mtime: file.mtime,
+            crc32,
+            synced: prev.and_then(|p| p.synced.clone()),
+        });
+    }
+    *list = entries;
+    Ok(hashed)
 }
 
 fn crc32_of(path: &Path) -> Result<u32> {
@@ -145,7 +179,7 @@ mod tests {
         let mut index = Index::default();
 
         // act
-        let hashed = index.refresh(&library.scan().unwrap()).unwrap();
+        let hashed = index.refresh(&library.scan().unwrap(), &[]).unwrap();
 
         // assert
         assert_eq!(hashed, 1);
@@ -159,11 +193,11 @@ mod tests {
         // arrange
         let (_temp, library) = library_with(&[("a.sfc", b"abc")]);
         let mut index = Index::default();
-        index.refresh(&library.scan().unwrap()).unwrap();
+        index.refresh(&library.scan().unwrap(), &[]).unwrap();
         index.roms[0].synced = Some(synced(0x352441C2));
 
         // act
-        let hashed = index.refresh(&library.scan().unwrap()).unwrap();
+        let hashed = index.refresh(&library.scan().unwrap(), &[]).unwrap();
 
         // assert
         assert_eq!(hashed, 0);
@@ -175,7 +209,7 @@ mod tests {
         // arrange
         let (temp, library) = library_with(&[("a.sfc", b"abc")]);
         let mut index = Index::default();
-        index.refresh(&library.scan().unwrap()).unwrap();
+        index.refresh(&library.scan().unwrap(), &[]).unwrap();
         index.roms[0].synced = Some(synced(0x352441C2));
         let path = temp.path().join("SFC").join("a.sfc");
         fs::write(&path, b"abd").unwrap();
@@ -186,7 +220,7 @@ mod tests {
         file.set_modified(later).unwrap();
 
         // act
-        let hashed = index.refresh(&library.scan().unwrap()).unwrap();
+        let hashed = index.refresh(&library.scan().unwrap(), &[]).unwrap();
 
         // assert
         assert_eq!(hashed, 1);
@@ -199,11 +233,11 @@ mod tests {
         // arrange
         let (temp, library) = library_with(&[("a.sfc", b"a"), ("b.sfc", b"b")]);
         let mut index = Index::default();
-        index.refresh(&library.scan().unwrap()).unwrap();
+        index.refresh(&library.scan().unwrap(), &[]).unwrap();
         fs::remove_file(temp.path().join("SFC").join("a.sfc")).unwrap();
 
         // act
-        index.refresh(&library.scan().unwrap()).unwrap();
+        index.refresh(&library.scan().unwrap(), &[]).unwrap();
 
         // assert
         assert_eq!(index.roms.len(), 1);
@@ -215,7 +249,7 @@ mod tests {
         // arrange
         let (_temp, library) = library_with(&[("a.sfc", b"abc")]);
         let mut index = Index::default();
-        index.refresh(&library.scan().unwrap()).unwrap();
+        index.refresh(&library.scan().unwrap(), &[]).unwrap();
         index.roms[0].synced = Some(synced(0x0000_00FF));
 
         // act
@@ -227,6 +261,39 @@ mod tests {
         assert!(body.contains("\"crc32\": \"352441C2\""));
         assert!(body.contains("\"crc32\": \"000000FF\""));
         assert_eq!(loaded, index);
+    }
+
+    #[test]
+    fn refresh_keeps_dats_separate_from_roms() {
+        // arrange
+        let (temp, library) = library_with(&[("a.sfc", b"abc")]);
+        let dat_path = temp.path().join("3ds.dat");
+        fs::write(&dat_path, b"dat").unwrap();
+        let dat = ScannedFile {
+            system: System::N3ds,
+            name: "3ds.dat".to_string(),
+            path: dat_path,
+            size: 3,
+            mtime: 1,
+        };
+        let mut index = Index::default();
+
+        // act
+        let hashed = index.refresh(&library.scan().unwrap(), &[dat]).unwrap();
+
+        // assert
+        assert_eq!(hashed, 2);
+        assert_eq!(index.roms.len(), 1);
+        assert_eq!(index.dats.len(), 1);
+        assert_eq!(index.dats[0].name, "3ds.dat");
+        assert_eq!(
+            index
+                .find_mut(Kind::Dat, System::N3ds, "3ds.dat")
+                .unwrap()
+                .crc32,
+            crc32fast::hash(b"dat")
+        );
+        assert!(index.find_mut(Kind::Rom, System::N3ds, "3ds.dat").is_none());
     }
 
     #[test]

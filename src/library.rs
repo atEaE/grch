@@ -7,6 +7,8 @@ use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
+use crate::dir;
+use crate::sync::Kind;
 use crate::system::System;
 
 pub const GRCH_DIR: &str = ".grch";
@@ -153,6 +155,18 @@ impl Library {
             .map(String::as_str)
             .unwrap_or(system.default_dir_name());
         self.root.join(folder)
+    }
+
+    /// Directory a synced file of `kind` / `system` lives in on this machine.
+    pub fn dest_dir(&self, kind: Kind, system: System) -> Result<PathBuf> {
+        match kind {
+            Kind::Rom => Ok(self.system_dir(system)),
+            Kind::Dat => dir::custom_dat_dir(),
+        }
+    }
+
+    pub fn local_path(&self, kind: Kind, system: System, name: &str) -> Result<PathBuf> {
+        Ok(self.dest_dir(kind, system)?.join(name))
     }
 
     /// List the files directly under each configured system folder.

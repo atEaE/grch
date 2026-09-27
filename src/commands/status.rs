@@ -12,12 +12,7 @@ pub fn run(system: Option<System>, patterns: &[String]) -> anyhow::Result<()> {
     let library = Library::discover(&std::env::current_dir()?)?;
     let remote = remote::open(&library.config.remote)?;
 
-    let mut index = Index::load(&library)?;
-    let hashed = index.refresh(&library.scan()?)?;
-    index.save(&library)?;
-    if hashed > 0 {
-        eprintln!("hashed {} changed files", hashed);
-    }
+    let index = Index::load_refreshed(&library)?;
 
     let manifest = match Manifest::fetch(remote.as_ref())? {
         Some((manifest, _rev)) => manifest,
@@ -70,13 +65,7 @@ fn print_report(changes: &[Change]) {
                 Action::PushModified => " (modified)",
                 _ => "",
             };
-            println!(
-                "  {} {}/{}{}",
-                mark,
-                change.system.name(),
-                change.name,
-                note
-            );
+            println!("  {} {}{}", mark, change.key(), note);
         }
         println!();
     }
