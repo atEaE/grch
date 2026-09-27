@@ -7,6 +7,7 @@ mod commands;
 mod credentials;
 mod dat;
 mod dir;
+mod format;
 mod hash;
 mod hex;
 mod index;
@@ -14,6 +15,7 @@ mod input;
 mod library;
 mod manifest;
 mod password;
+mod prompt;
 mod remote;
 mod sync;
 mod system;
@@ -82,6 +84,24 @@ enum Command {
     Remote {
         #[command(subcommand)]
         command: RemoteCommand,
+    },
+
+    /// Upload local additions and changes to the remote
+    Push {
+        /// Limit to one system
+        #[arg(long)]
+        system: Option<system::System>,
+
+        /// Limit to files matching these globs (name with or without extension)
+        pattern: Vec<String>,
+
+        /// Show what would be pushed without transferring
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip confirmation prompts (conflicts are resolved in favor of local files)
+        #[arg(short, long)]
+        yes: bool,
     },
 
     /// Show what push / pull would transfer (no transfer)
@@ -207,6 +227,17 @@ fn main() -> anyhow::Result<()> {
             RemoteCommand::Ls { system, pattern } => commands::remote::ls(system, &pattern)?,
             RemoteCommand::Password => commands::remote::set_password()?,
         },
+        Command::Push {
+            system,
+            pattern,
+            dry_run,
+            yes,
+        } => commands::push::run(commands::push::Options {
+            system,
+            patterns: pattern,
+            dry_run,
+            yes,
+        })?,
         Command::Status { system, pattern } => commands::status::run(system, &pattern)?,
         Command::Archive { command } => match command {
             ArchiveCommand::Pack { input, output } => commands::archive::pack(&input, &output)?,
