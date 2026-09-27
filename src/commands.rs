@@ -5,3 +5,4 @@ pub mod dat;
 pub mod info;
 pub mod init;
 pub mod rename;
+pub mod status;
