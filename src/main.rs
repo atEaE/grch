@@ -163,6 +163,19 @@ enum RemoteCommand {
     },
     /// Set or change the stored archive password
     Password,
+    /// Remove files from the remote (local copies are kept)
+    Rm {
+        /// Limit to one system
+        #[arg(long)]
+        system: Option<system::System>,
+
+        /// Files matching these globs (name with or without extension)
+        pattern: Vec<String>,
+
+        /// Show what would be removed without changing the remote
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -248,6 +261,11 @@ fn main() -> anyhow::Result<()> {
             RemoteCommand::Info => commands::remote::info()?,
             RemoteCommand::Ls { system, pattern } => commands::remote::ls(system, &pattern)?,
             RemoteCommand::Password => commands::remote::set_password()?,
+            RemoteCommand::Rm {
+                system,
+                pattern,
+                dry_run,
+            } => commands::remote::rm(system, &pattern, dry_run)?,
         },
         Command::Pull {
             all,
