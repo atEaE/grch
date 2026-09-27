@@ -7,10 +7,6 @@ use crate::remote::{Remote, Rev};
 use crate::system::System;
 
 const VERSION: u32 = 1;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "written by push, which is not implemented yet")
-)]
 const ENTRY_NAME: &str = "manifest.json";
 
 /// Index of everything on the remote. Stored there as a single-entry encrypted 7z
@@ -67,11 +63,6 @@ impl Manifest {
         let (_, body) = archive::unpack_bytes(bytes, password).context("decrypt manifest")?;
         serde_json::from_slice(&body).context("parse manifest")
     }
-
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "written by push, which is not implemented yet")
-    )]
     pub fn to_encrypted(&self, password: &str) -> Result<Vec<u8>> {
         let body = serde_json::to_vec_pretty(self)?;
         archive::pack_bytes(ENTRY_NAME, &body, password).context("encrypt manifest")
