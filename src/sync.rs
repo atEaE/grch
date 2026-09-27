@@ -25,8 +25,17 @@ pub enum Action {
     NotFetched,
 }
 
+/// Which section of the index / manifest an entry lives in. ROMs sit under the library's
+/// system folders; custom DATs live in the machine-wide `custom_dat/` directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Kind {
+    Rom,
+    Dat,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Change<'a> {
+    pub kind: Kind,
     pub system: System,
     pub name: &'a str,
     pub local: Option<&'a index::Entry>,
@@ -34,17 +43,42 @@ pub struct Change<'a> {
     pub action: Action,
 }
 
+impl Change<'_> {
+    /// Display key: `sfc/Xxx.sfc` for a ROM, `dat/3ds.dat` for a custom DAT.
+    pub fn key(&self) -> String {
+        key(self.kind, self.system, self.name)
+    }
+}
+
+pub fn key(kind: Kind, system: System, name: &str) -> String {
+    match kind {
+        Kind::Rom => format!("{}/{}", system.name(), name),
+        Kind::Dat => format!("dat/{}", name),
+    }
+}
+
 type Pair<'a> = (Option<&'a index::Entry>, Option<&'a manifest::Entry>);
 
-/// Classify every (system, name) known locally or remotely. Sorted by system, then name.
+/// Classify everything known locally or remotely: ROMs first, then DATs, each sorted by
+/// system and name.
 pub fn diff<'a>(index: &'a Index, manifest: &'a Manifest) -> Vec<Change<'a>> {
+    let mut changes = diff_lists(Kind::Rom, &index.roms, &manifest.roms);
+    changes.extend(diff_lists(Kind::Dat, &index.dats, &manifest.dats));
+    changes
+}
+
+fn diff_lists<'a>(
+    kind: Kind,
+    local: &'a [index::Entry],
+    remote: &'a [manifest::Entry],
+) -> Vec<Change<'a>> {
     let mut keys: BTreeMap<(System, &'a str), Pair<'a>> = BTreeMap::new();
-    for entry in &index.roms {
+    for entry in local {
         keys.entry((entry.system, entry.name.as_str()))
             .or_default()
             .0 = Some(entry);
     }
-    for entry in &manifest.roms {
+    for entry in remote {
         keys.entry((entry.system, entry.name.as_str()))
             .or_default()
             .1 = Some(entry);
@@ -52,6 +86,7 @@ pub fn diff<'a>(index: &'a Index, manifest: &'a Manifest) -> Vec<Change<'a>> {
 
     keys.into_iter()
         .map(|((system, name), (local, remote))| Change {
+            kind,
             system,
             name,
             local,
@@ -270,6 +305,30 @@ mod tests {
                 (System::Sfc, "b.sfc")
             ]
         );
+    }
+
+    #[test]
+    fn diff_lists_dats_after_roms_with_their_own_key() {
+        // arrange
+        let mut dat = local("3ds.dat", 1, None);
+        dat.system = System::N3ds;
+        let index = Index {
+            roms: vec![local("a.sfc", 1, None)],
+            dats: vec![dat],
+            ..Index::default()
+        };
+        let manifest = Manifest::default();
+
+        // act
+        let changes = diff(&index, &manifest);
+
+        // assert
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].kind, Kind::Rom);
+        assert_eq!(changes[0].key(), "sfc/a.sfc");
+        assert_eq!(changes[1].kind, Kind::Dat);
+        assert_eq!(changes[1].key(), "dat/3ds.dat");
+        assert_eq!(changes[1].action, Action::PushNew);
     }
 
     #[test]
