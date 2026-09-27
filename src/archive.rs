@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{self, Read, Seek, Write};
+use std::io::{self, Cursor, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -39,6 +39,25 @@ pub fn pack_file(src: &Path, entry_name: &str, dest: &Path, password: &str) -> R
     let sha256 = hash::sha256_file(dest)?;
     let size = fs::metadata(dest)?.len();
     Ok(Packed { sha256, size })
+}
+
+/// Pack an in-memory blob (the manifest) the same way as a file.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by push, which is not implemented yet")
+)]
+pub fn pack_bytes(entry_name: &str, data: &[u8], password: &str) -> Result<Vec<u8>> {
+    let mut out = Cursor::new(Vec::new());
+    write_archive(&mut out, entry_name, data, password)?;
+    Ok(out.into_inner())
+}
+
+/// Read the single entry of an in-memory archive (the manifest).
+pub fn unpack_bytes(archive: &[u8], password: &str) -> Result<(String, Vec<u8>)> {
+    let reader = open_reader(Cursor::new(archive), password)?;
+    let mut body = Vec::new();
+    let name = read_single_entry(reader, &mut body)?;
+    Ok((name, body))
 }
 
 /// Extract the single entry of `archive` into `dest_dir`, named after the entry.
@@ -391,6 +410,21 @@ mod tests {
         // assert
         assert!(err.to_string().contains("does not match"), "{err:#}");
         assert!(!restored.join(NAME).exists());
+    }
+
+    #[test]
+    fn bytes_roundtrip() {
+        // arrange
+        let body = br#"{"version":1}"#;
+
+        // act
+        let archive = pack_bytes("manifest.json", body, PASSWORD).unwrap();
+        let (name, out) = unpack_bytes(&archive, PASSWORD).unwrap();
+
+        // assert
+        assert_eq!(name, "manifest.json");
+        assert_eq!(out, body);
+        assert!(unpack_bytes(&archive, "nope").is_err());
     }
 
     #[test]

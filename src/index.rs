@@ -26,14 +26,21 @@ pub struct Entry {
     pub name: String,
     pub size: u64,
     pub mtime: u64,
-    #[serde(with = "hex_u32")]
+    #[serde(with = "crate::hex::u32")]
     pub crc32: u32,
-    /// crc32 as of the last successful push / pull of this file. `None` until first synced.
-    #[serde(default, with = "hex_u32_opt")]
-    pub synced_crc32: Option<u32>,
-    /// Remote object name (sha256 hex of the archive) the synced crc32 corresponds to.
+    /// State as of the last successful push / pull of this file. `None` until first synced.
     #[serde(default)]
-    pub object: Option<String>,
+    pub synced: Option<Synced>,
+}
+
+/// What the remote held for this file when it was last synced from this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Synced {
+    pub size: u64,
+    #[serde(with = "crate::hex::u32")]
+    pub crc32: u32,
+    /// Remote object name (sha256 hex of the archive).
+    pub object: String,
 }
 
 impl Default for Index {
@@ -88,8 +95,7 @@ impl Index {
                 size: file.size,
                 mtime: file.mtime,
                 crc32,
-                synced_crc32: prev.and_then(|p| p.synced_crc32),
-                object: prev.and_then(|p| p.object.clone()),
+                synced: prev.and_then(|p| p.synced.clone()),
             });
         }
         self.roms = roms;
@@ -101,36 +107,6 @@ fn crc32_of(path: &Path) -> Result<u32> {
     hash::crc32_file(path).with_context(|| format!("hash {}", path.display()))
 }
 
-mod hex_u32 {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(v: &u32, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&format!("{:08X}", v))
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
-        let s = String::deserialize(d)?;
-        u32::from_str_radix(&s, 16).map_err(serde::de::Error::custom)
-    }
-}
-
-mod hex_u32_opt {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(v: &Option<u32>, s: S) -> Result<S::Ok, S::Error> {
-        match v {
-            Some(v) => s.serialize_some(&format!("{:08X}", v)),
-            None => s.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
-        let s: Option<String> = Option::deserialize(d)?;
-        s.map(|s| u32::from_str_radix(&s, 16).map_err(serde::de::Error::custom))
-            .transpose()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, SystemTime};
@@ -139,6 +115,14 @@ mod tests {
 
     use super::*;
 
+    fn synced(crc32: u32) -> Synced {
+        Synced {
+            size: 3,
+            crc32,
+            object: "obj".to_string(),
+        }
+    }
+
     fn library_with(files: &[(&str, &[u8])]) -> (TempDir, Library) {
         let temp = TempDir::new().unwrap();
         let sfc = temp.path().join("SFC");
@@ -146,7 +130,11 @@ mod tests {
         for (name, body) in files {
             fs::write(sfc.join(name), body).unwrap();
         }
-        let (library, _) = Library::init(temp.path(), "dropbox").unwrap();
+        let remote = crate::library::Remote {
+            backend: "dropbox".to_string(),
+            path: None,
+        };
+        let (library, _) = Library::init(temp.path(), remote).unwrap();
         (temp, library)
     }
 
@@ -163,7 +151,7 @@ mod tests {
         assert_eq!(hashed, 1);
         assert_eq!(index.roms.len(), 1);
         assert_eq!(index.roms[0].crc32, 0x352441C2);
-        assert_eq!(index.roms[0].synced_crc32, None);
+        assert_eq!(index.roms[0].synced, None);
     }
 
     #[test]
@@ -172,16 +160,14 @@ mod tests {
         let (_temp, library) = library_with(&[("a.sfc", b"abc")]);
         let mut index = Index::default();
         index.refresh(&library.scan().unwrap()).unwrap();
-        index.roms[0].synced_crc32 = Some(0x352441C2);
-        index.roms[0].object = Some("obj".to_string());
+        index.roms[0].synced = Some(synced(0x352441C2));
 
         // act
         let hashed = index.refresh(&library.scan().unwrap()).unwrap();
 
         // assert
         assert_eq!(hashed, 0);
-        assert_eq!(index.roms[0].synced_crc32, Some(0x352441C2));
-        assert_eq!(index.roms[0].object.as_deref(), Some("obj"));
+        assert_eq!(index.roms[0].synced, Some(synced(0x352441C2)));
     }
 
     #[test]
@@ -190,7 +176,7 @@ mod tests {
         let (temp, library) = library_with(&[("a.sfc", b"abc")]);
         let mut index = Index::default();
         index.refresh(&library.scan().unwrap()).unwrap();
-        index.roms[0].synced_crc32 = Some(0x352441C2);
+        index.roms[0].synced = Some(synced(0x352441C2));
         let path = temp.path().join("SFC").join("a.sfc");
         fs::write(&path, b"abd").unwrap();
         let later = SystemTime::now() + Duration::from_secs(10);
@@ -205,7 +191,7 @@ mod tests {
         // assert
         assert_eq!(hashed, 1);
         assert_ne!(index.roms[0].crc32, 0x352441C2);
-        assert_eq!(index.roms[0].synced_crc32, Some(0x352441C2));
+        assert_eq!(index.roms[0].synced, Some(synced(0x352441C2)));
     }
 
     #[test]
@@ -230,7 +216,7 @@ mod tests {
         let (_temp, library) = library_with(&[("a.sfc", b"abc")]);
         let mut index = Index::default();
         index.refresh(&library.scan().unwrap()).unwrap();
-        index.roms[0].synced_crc32 = Some(0x0000_00FF);
+        index.roms[0].synced = Some(synced(0x0000_00FF));
 
         // act
         index.save(&library).unwrap();
@@ -239,7 +225,7 @@ mod tests {
 
         // assert
         assert!(body.contains("\"crc32\": \"352441C2\""));
-        assert!(body.contains("\"synced_crc32\": \"000000FF\""));
+        assert!(body.contains("\"crc32\": \"000000FF\""));
         assert_eq!(loaded, index);
     }
 
