@@ -23,6 +23,9 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Remote {
     pub backend: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 /// A file found under one of the configured system folders.
@@ -52,7 +55,7 @@ pub struct InitReport {
 impl Library {
     /// Create `.grch/` in `dir`. Existing folders are matched to systems case-insensitively;
     /// systems without a folder get their default folder name so that `pull` can create it.
-    pub fn init(dir: &Path, backend: &str) -> Result<(Library, InitReport)> {
+    pub fn init(dir: &Path, remote: Remote) -> Result<(Library, InitReport)> {
         let grch = dir.join(GRCH_DIR);
         if grch.exists() {
             bail!("already initialized: {}", grch.display());
@@ -99,12 +102,7 @@ impl Library {
             .map(|(folder, _)| folder.clone())
             .collect();
 
-        let config = Config {
-            remote: Remote {
-                backend: backend.to_string(),
-            },
-            dirs,
-        };
+        let config = Config { remote, dirs };
         fs::create_dir(&grch).with_context(|| format!("create {}", grch.display()))?;
         let body = toml::to_string(&config)?;
         fs::write(grch.join(CONFIG_FILE), body)?;
@@ -203,6 +201,13 @@ mod tests {
 
     use super::*;
 
+    fn dropbox() -> Remote {
+        Remote {
+            backend: "dropbox".to_string(),
+            path: None,
+        }
+    }
+
     #[test]
     fn init_matches_existing_folders_case_insensitively() {
         // arrange
@@ -213,7 +218,7 @@ mod tests {
         fs::write(temp.path().join("note.txt"), b"").unwrap();
 
         // act
-        let (library, report) = Library::init(temp.path(), "dropbox").unwrap();
+        let (library, report) = Library::init(temp.path(), dropbox()).unwrap();
 
         // assert
         assert_eq!(library.config.dirs[&System::Sfc], "SFC");
@@ -240,7 +245,7 @@ mod tests {
         fs::create_dir(temp.path().join("nds")).unwrap();
 
         // act
-        let (library, _) = Library::init(temp.path(), "dropbox").unwrap();
+        let (library, _) = Library::init(temp.path(), dropbox()).unwrap();
 
         // assert
         assert_eq!(library.config.dirs[&System::Nds], "nds");
@@ -250,22 +255,22 @@ mod tests {
     fn init_twice_fails() {
         // arrange
         let temp = TempDir::new().unwrap();
-        Library::init(temp.path(), "dropbox").unwrap();
+        Library::init(temp.path(), dropbox()).unwrap();
 
         // act & assert
-        assert!(Library::init(temp.path(), "dropbox").is_err());
+        assert!(Library::init(temp.path(), dropbox()).is_err());
     }
 
     #[test]
     fn init_inside_existing_library_fails() {
         // arrange
         let temp = TempDir::new().unwrap();
-        Library::init(temp.path(), "dropbox").unwrap();
+        Library::init(temp.path(), dropbox()).unwrap();
         let nested = temp.path().join("SFC");
         fs::create_dir(&nested).unwrap();
 
         // act & assert
-        let err = Library::init(&nested, "dropbox").unwrap_err();
+        let err = Library::init(&nested, dropbox()).unwrap_err();
         assert!(err.to_string().contains("nested"));
     }
 
@@ -273,7 +278,7 @@ mod tests {
     fn config_roundtrips_through_toml() {
         // arrange
         let temp = TempDir::new().unwrap();
-        let (library, _) = Library::init(temp.path(), "dropbox").unwrap();
+        let (library, _) = Library::init(temp.path(), dropbox()).unwrap();
 
         // act
         let reopened = Library::open(temp.path()).unwrap();
@@ -281,13 +286,35 @@ mod tests {
         // assert
         assert_eq!(reopened.config, library.config);
         assert_eq!(reopened.config.remote.backend, "dropbox");
+        assert!(
+            !fs::read_to_string(temp.path().join(GRCH_DIR).join(CONFIG_FILE))
+                .unwrap()
+                .contains("path")
+        );
+    }
+
+    #[test]
+    fn local_remote_path_roundtrips() {
+        // arrange
+        let temp = TempDir::new().unwrap();
+        let remote = Remote {
+            backend: "local".to_string(),
+            path: Some("/tmp/remote".to_string()),
+        };
+        Library::init(temp.path(), remote.clone()).unwrap();
+
+        // act
+        let reopened = Library::open(temp.path()).unwrap();
+
+        // assert
+        assert_eq!(reopened.config.remote, remote);
     }
 
     #[test]
     fn discover_walks_up_to_root() {
         // arrange
         let temp = TempDir::new().unwrap();
-        Library::init(temp.path(), "dropbox").unwrap();
+        Library::init(temp.path(), dropbox()).unwrap();
         let nested = temp.path().join("SFC").join("deeper");
         fs::create_dir_all(&nested).unwrap();
 
@@ -322,7 +349,7 @@ mod tests {
         fs::write(sfc.join("sub").join("nested.sfc"), b"n").unwrap();
         fs::write(gba.join("c.gba"), b"ccc").unwrap();
         fs::write(temp.path().join("loose.gb"), b"l").unwrap();
-        let (library, _) = Library::init(temp.path(), "dropbox").unwrap();
+        let (library, _) = Library::init(temp.path(), dropbox()).unwrap();
 
         // act
         let files = library.scan().unwrap();
