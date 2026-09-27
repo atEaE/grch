@@ -86,6 +86,28 @@ enum Command {
         command: RemoteCommand,
     },
 
+    /// Download from the remote: files already here by default, more with --all / --system / PATTERN
+    Pull {
+        /// Fetch everything on the remote
+        #[arg(long)]
+        all: bool,
+
+        /// Fetch every file of one system
+        #[arg(long)]
+        system: Option<system::System>,
+
+        /// Fetch files matching these globs (name with or without extension)
+        pattern: Vec<String>,
+
+        /// Show what would be pulled without transferring
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip confirmation prompts (conflicts are resolved in favor of the remote; deletions still ask)
+        #[arg(short, long)]
+        yes: bool,
+    },
+
     /// Upload local additions and changes to the remote
     Push {
         /// Limit to one system
@@ -227,6 +249,19 @@ fn main() -> anyhow::Result<()> {
             RemoteCommand::Ls { system, pattern } => commands::remote::ls(system, &pattern)?,
             RemoteCommand::Password => commands::remote::set_password()?,
         },
+        Command::Pull {
+            all,
+            system,
+            pattern,
+            dry_run,
+            yes,
+        } => commands::pull::run(commands::pull::Options {
+            all,
+            system,
+            patterns: pattern,
+            dry_run,
+            yes,
+        })?,
         Command::Push {
             system,
             pattern,
