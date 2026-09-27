@@ -7,10 +7,14 @@ mod commands;
 mod dat;
 mod dir;
 mod hash;
+mod hex;
 mod index;
 mod input;
 mod library;
+mod manifest;
 mod password;
+mod remote;
+mod sync;
 mod system;
 
 #[derive(Parser)]
@@ -67,6 +71,20 @@ enum Command {
     Init {
         /// Library root (default: current directory)
         dir: Option<PathBuf>,
+
+        /// Use a local directory as the remote instead of Dropbox (for testing)
+        #[arg(long, value_name = "DIR")]
+        local: Option<PathBuf>,
+    },
+
+    /// Show what push / pull would transfer (no transfer)
+    Status {
+        /// Limit to one system
+        #[arg(long)]
+        system: Option<system::System>,
+
+        /// Limit to files matching these globs (name with or without extension)
+        pattern: Vec<String>,
     },
 
     /// Debug: pack / unpack a single file the way sync does
@@ -147,13 +165,14 @@ fn main() -> anyhow::Result<()> {
             DatCommand::Ls => commands::dat::ls()?,
         },
         Command::Info => commands::info::run()?,
-        Command::Init { dir } => {
+        Command::Init { dir, local } => {
             let dir = match dir {
                 Some(dir) => dir,
                 None => std::env::current_dir()?,
             };
-            commands::init::run(&dir)?
+            commands::init::run(&dir, local.as_deref())?
         }
+        Command::Status { system, pattern } => commands::status::run(system, &pattern)?,
         Command::Archive { command } => match command {
             ArchiveCommand::Pack { input, output } => commands::archive::pack(&input, &output)?,
             ArchiveCommand::Unpack { input, output } => commands::archive::unpack(&input, &output)?,
