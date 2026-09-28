@@ -408,7 +408,8 @@ fn check_ok(res: &mut Response<ureq::Body>, what: &str) -> Result<()> {
         return Ok(());
     }
     let status = res.status();
-    bail!("{what} failed ({status}): {}", error_summary(res));
+    let body = res.body_mut().read_to_string().unwrap_or_default();
+    bail!("{what} failed ({status}): {}", body.trim());
 }
 
 fn object_path(object: &str) -> String {
