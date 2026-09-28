@@ -8,7 +8,9 @@ const SERVICE: &str = "grch";
 pub enum Secret<'a> {
     /// Issued by Dropbox for one app, so it is stored per app key: two libraries on
     /// different Dropbox apps can both be logged in on the same machine.
-    DropboxRefreshToken { app_key: &'a str },
+    DropboxRefreshToken {
+        app_key: &'a str,
+    },
     ArchivePassword,
 }
 
