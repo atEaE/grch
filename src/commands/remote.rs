@@ -17,15 +17,31 @@ fn current_library() -> anyhow::Result<Library> {
     Library::discover(&std::env::current_dir()?)
 }
 
-pub fn login() -> anyhow::Result<()> {
-    let library = current_library()?;
+/// `app_key` (from `--app-key`) is written to `.grch/config.toml` first, so it is only
+/// needed the first time a library is set up.
+pub fn login(app_key: Option<&str>) -> anyhow::Result<()> {
+    let mut library = current_library()?;
     match library.config.remote.backend.as_str() {
         "dropbox" => {
-            dropbox::login()?;
+            if let Some(key) = app_key {
+                let key = super::init::clean_app_key(key)?;
+                if library.config.remote.app_key.as_deref() != Some(key.as_str()) {
+                    library.config.remote.app_key = Some(key);
+                    library.save_config()?;
+                    println!("app key stored in {}", library.grch_dir().display());
+                }
+            }
+            let key = dropbox::app_key(&library.config.remote)?;
+            dropbox::login(key)?;
             let remote = remote::open(&library.config.remote)?;
             println!("{} logged in: {}", "✓".green(), remote.describe()?);
         }
-        other => println!("the {other} backend needs no login"),
+        other => {
+            if app_key.is_some() {
+                anyhow::bail!("--app-key is for Dropbox; the {other} backend has no app key");
+            }
+            println!("the {other} backend needs no login");
+        }
     }
 
     if credentials::get(Secret::ArchivePassword)?.is_some() {
@@ -38,7 +54,12 @@ pub fn login() -> anyhow::Result<()> {
 }
 
 pub fn logout() -> anyhow::Result<()> {
-    dropbox::logout()?;
+    let library = current_library()?;
+    if library.config.remote.backend == "dropbox"
+        && let Some(key) = library.config.remote.app_key.as_deref()
+    {
+        dropbox::logout(key)?;
+    }
     credentials::delete(Secret::ArchivePassword)?;
     println!(
         "{} removed the Dropbox token and archive password from this machine",
@@ -57,6 +78,15 @@ pub fn info() -> anyhow::Result<()> {
     let library = current_library()?;
     println!("library: {}", library.root.display());
     println!("backend: {}", library.config.remote.backend);
+    if library.config.remote.backend == "dropbox" {
+        match library.config.remote.app_key.as_deref() {
+            Some(key) => println!("app key: {key}"),
+            None => println!(
+                "app key: {} none (run `grch remote login --app-key <KEY>`)",
+                "✗".red()
+            ),
+        }
+    }
 
     let remote = match remote::open(&library.config.remote) {
         Ok(remote) => remote,

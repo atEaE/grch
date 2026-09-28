@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-use crate::credentials::{self, Secret};
 use crate::library;
 
 /// Opaque version of the remote manifest, used for optimistic locking on push.
@@ -53,12 +52,7 @@ pub fn open(config: &library::Remote) -> Result<Box<dyn Remote>> {
             };
             Ok(Box::new(local::LocalDir::new(PathBuf::from(path))))
         }
-        "dropbox" => {
-            let Some(token) = credentials::get(Secret::DropboxRefreshToken)? else {
-                bail!("not logged in to Dropbox on this machine. Run `grch remote login` first.");
-            };
-            Ok(Box::new(dropbox::Dropbox::new(token)?))
-        }
+        "dropbox" => Ok(Box::new(dropbox::open(config)?)),
         other => bail!("unknown remote backend: {other:?}"),
     }
 }
