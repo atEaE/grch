@@ -13,10 +13,11 @@ use ureq::http::Response;
 use super::{ManifestConflict, Remote, Rev};
 use crate::credentials::{self, Secret};
 
-/// Dropbox app key (a public identifier; PKCE needs no secret). The app must be created
-/// with "App folder" access so grch only ever sees its own folder.
-/// Overridable for development with GRCH_DROPBOX_APP_KEY.
-const APP_KEY: &str = "";
+/// Where to register a Dropbox app. grch is distributed without one: each user creates
+/// their own with "App folder" access (so grch only ever sees its own folder) and gives
+/// its key to `init --app-key` / `remote login --app-key`, which keeps it in
+/// `.grch/config.toml` beside the rest of the remote settings.
+pub const APP_CONSOLE_URL: &str = "https://www.dropbox.com/developers/apps";
 
 const AUTH_URL: &str = "https://www.dropbox.com/oauth2/authorize";
 const TOKEN_URL: &str = "https://api.dropboxapi.com/oauth2/token";
@@ -40,12 +41,15 @@ pub struct Dropbox {
     access: Mutex<Option<(String, Instant)>>,
 }
 
-fn app_key() -> Result<String> {
-    let key = std::env::var("GRCH_DROPBOX_APP_KEY").unwrap_or_else(|_| APP_KEY.to_string());
-    if key.is_empty() {
-        bail!("no Dropbox app key: set GRCH_DROPBOX_APP_KEY or build grch with one");
+/// The app key from the library config, or a pointer to `init --app-key` when unset.
+pub fn app_key(config: &crate::library::Remote) -> Result<&str> {
+    match config.app_key.as_deref() {
+        Some(key) if !key.is_empty() => Ok(key),
+        _ => bail!(
+            "no Dropbox app key in .grch/config.toml. Create an app with \"App folder\" access at \
+             {APP_CONSOLE_URL}, then run `grch remote login --app-key <KEY>`."
+        ),
     }
-    Ok(key)
 }
 
 fn agent() -> Agent {
@@ -86,8 +90,7 @@ struct TokenResponse {
 /// OAuth 2.0 authorization code flow with PKCE. No redirect URI is registered, so Dropbox
 /// shows the code on a page for the user to paste; that keeps grch free of a local HTTP
 /// listener and works the same on every machine.
-pub fn login() -> Result<()> {
-    let app_key = app_key()?;
+pub fn login(app_key: &str) -> Result<()> {
     let mut verifier_bytes = [0u8; 32];
     getrandom::fill(&mut verifier_bytes).context("generate PKCE verifier")?;
     let verifier = base64url(&verifier_bytes);
@@ -114,7 +117,7 @@ pub fn login() -> Result<()> {
             ("code", code),
             ("grant_type", "authorization_code"),
             ("code_verifier", verifier.as_str()),
-            ("client_id", app_key.as_str()),
+            ("client_id", app_key),
         ])
         .context("request token")?;
     if !res.status().is_success() {
@@ -125,12 +128,21 @@ pub fn login() -> Result<()> {
     let Some(refresh) = token.refresh_token else {
         bail!("Dropbox returned no refresh token");
     };
-    credentials::set(Secret::DropboxRefreshToken, &refresh)?;
+    credentials::set(Secret::DropboxRefreshToken { app_key }, &refresh)?;
     Ok(())
 }
 
-pub fn logout() -> Result<()> {
-    credentials::delete(Secret::DropboxRefreshToken)
+pub fn logout(app_key: &str) -> Result<()> {
+    credentials::delete(Secret::DropboxRefreshToken { app_key })
+}
+
+/// Open the library's Dropbox remote with the token stored for its app on this machine.
+pub fn open(config: &crate::library::Remote) -> Result<Dropbox> {
+    let app_key = app_key(config)?;
+    let Some(token) = credentials::get(Secret::DropboxRefreshToken { app_key })? else {
+        bail!("not logged in to Dropbox on this machine. Run `grch remote login` first.");
+    };
+    Ok(Dropbox::new(app_key.to_string(), token))
 }
 
 #[derive(Deserialize)]
@@ -178,13 +190,13 @@ enum Body<'a> {
 }
 
 impl Dropbox {
-    pub fn new(refresh_token: String) -> Result<Self> {
-        Ok(Dropbox {
+    fn new(app_key: String, refresh_token: String) -> Self {
+        Dropbox {
             agent: agent(),
-            app_key: app_key()?,
+            app_key,
             refresh_token,
             access: Mutex::new(None),
-        })
+        }
     }
 
     fn access_token(&self, force_refresh: bool) -> Result<String> {
@@ -396,7 +408,8 @@ fn check_ok(res: &mut Response<ureq::Body>, what: &str) -> Result<()> {
         return Ok(());
     }
     let status = res.status();
-    bail!("{what} failed ({status}): {}", error_summary(res));
+    let body = res.body_mut().read_to_string().unwrap_or_default();
+    bail!("{what} failed ({status}): {}", body.trim());
 }
 
 fn object_path(object: &str) -> String {
