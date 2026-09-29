@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::time::{Duration, SystemTime};
+
 use colored::Colorize;
 
 use crate::credentials::{self, Secret};
@@ -6,12 +9,15 @@ use crate::library::Library;
 use crate::manifest::{self, Manifest};
 use crate::password;
 use crate::prompt;
-use crate::remote::{self, ManifestConflict, dropbox};
+use crate::remote::{self, ManifestConflict, ObjectInfo, dropbox};
 use crate::sync::{Kind, Selection};
 use crate::system::System;
 
 /// Attempts at updating the manifest when other machines keep pushing in between.
 const MANIFEST_RETRIES: usize = 3;
+/// Objects younger than this may belong to a push still running on another machine
+/// (objects land before the manifest). A large system can take hours, hence a day.
+const GC_GRACE: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn current_library() -> anyhow::Result<Library> {
     Library::discover(&std::env::current_dir()?)
@@ -300,6 +306,122 @@ pub fn rm(system: Option<System>, patterns: &[String], dry_run: bool) -> anyhow:
     Ok(())
 }
 
+/// Delete objects the manifest does not reference. `push` uploads objects before it
+/// updates the manifest, so an interrupted push (or a lost merge in `update_manifest`)
+/// leaves objects behind; names are content hashes of a freshly encrypted archive, so
+/// a rerun never reuses them and they would stay forever otherwise.
+pub fn gc(dry_run: bool, yes: bool) -> anyhow::Result<()> {
+    let library = current_library()?;
+    let remote = remote::open(&library.config.remote)?;
+    let objects = remote.list_objects()?;
+    if objects.is_empty() {
+        println!("{} no objects on the remote", "✓".green());
+        return Ok(());
+    }
+    // No manifest means nothing was ever pushed to completion: everything is an orphan.
+    let manifest = Manifest::fetch(remote.as_ref())?.map(|(m, _)| m);
+    let (mut orphans, recent) = partition_orphans(&objects, manifest.as_ref(), SystemTime::now());
+    if !recent.is_empty() {
+        println!(
+            "{} {} unreferenced objects uploaded within the last {}h were left alone (a push may be in progress)",
+            "!".yellow(),
+            recent.len(),
+            GC_GRACE.as_secs() / 3600
+        );
+    }
+    if orphans.is_empty() {
+        println!("{} nothing to clean up", "✓".green());
+        return Ok(());
+    }
+    orphans.sort_by_key(|o| o.modified);
+
+    let total: u64 = orphans.iter().map(|o| o.size).sum();
+    println!(
+        "{} ({}, {} on the remote)",
+        "unreferenced objects".bold(),
+        orphans.len(),
+        human_size(total)
+    );
+    for o in &orphans {
+        println!(
+            "  {} {}  {}  {}",
+            "✗".red(),
+            &o.name[..o.name.len().min(12)],
+            local_date(o.modified).dimmed(),
+            human_size(o.size).dimmed()
+        );
+    }
+    if dry_run {
+        return Ok(());
+    }
+    if !yes
+        && !prompt::confirm(&format!(
+            "Delete {} objects from the remote?",
+            orphans.len()
+        ))?
+    {
+        println!("aborted");
+        return Ok(());
+    }
+
+    // A push elsewhere may have finished while the list was on screen; anything its
+    // manifest now references is off the table, whatever we listed.
+    let manifest = Manifest::fetch(remote.as_ref())?.map(|(m, _)| m);
+    let referenced: HashSet<&str> = manifest.iter().flat_map(|m| m.objects()).collect();
+    let mut deleted = 0;
+    let mut freed = 0;
+    for o in orphans
+        .iter()
+        .filter(|o| !referenced.contains(o.name.as_str()))
+    {
+        if let Err(e) = remote.delete(&o.name) {
+            eprintln!("could not delete object {}: {e}", o.name);
+            continue;
+        }
+        deleted += 1;
+        freed += o.size;
+    }
+
+    println!();
+    println!(
+        "{} deleted {} objects, {} freed",
+        "✓".green(),
+        deleted,
+        human_size(freed)
+    );
+    Ok(())
+}
+
+/// Split objects the manifest does not reference into those old enough to delete and
+/// those still inside `GC_GRACE`. Referenced objects are dropped.
+fn partition_orphans(
+    objects: &[ObjectInfo],
+    manifest: Option<&Manifest>,
+    now: SystemTime,
+) -> (Vec<ObjectInfo>, Vec<ObjectInfo>) {
+    let referenced: HashSet<&str> = manifest.iter().flat_map(|m| m.objects()).collect();
+    let cutoff = now.checked_sub(GC_GRACE).unwrap_or(std::time::UNIX_EPOCH);
+    let mut orphans = Vec::new();
+    let mut recent = Vec::new();
+    for o in objects {
+        if referenced.contains(o.name.as_str()) {
+            continue;
+        }
+        if o.modified > cutoff {
+            recent.push(o.clone());
+        } else {
+            orphans.push(o.clone());
+        }
+    }
+    (orphans, recent)
+}
+
+fn local_date(time: SystemTime) -> String {
+    chrono::DateTime::<chrono::Local>::from(time)
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
+}
+
 /// Split `victims` into those still on the remote as listed and those another machine
 /// re-pushed with different content since (kept, so a fresh dump is not lost).
 fn partition_unchanged(
@@ -364,5 +486,58 @@ mod tests {
             vec!["b"]
         );
         assert_eq!(skip[0].pushed_by, "other");
+    }
+
+    fn object(name: &str, age: Duration, now: SystemTime) -> ObjectInfo {
+        ObjectInfo {
+            name: name.to_string(),
+            size: 10,
+            modified: now - age,
+        }
+    }
+
+    #[test]
+    fn partition_orphans_skips_referenced_and_holds_back_recent() {
+        // arrange
+        let now = SystemTime::now();
+        let day = Duration::from_secs(24 * 60 * 60);
+        let manifest = Manifest {
+            roms: vec![entry("a", 1, "x")],
+            dats: vec![entry("d", 2, "x")],
+            ..Manifest::default()
+        };
+        let objects = vec![
+            object("obj-a-1", 3 * day, now),
+            object("obj-d-2", 3 * day, now),
+            object("old", 3 * day, now),
+            object("fresh", Duration::from_secs(60), now),
+        ];
+
+        // act
+        let (orphans, recent) = partition_orphans(&objects, Some(&manifest), now);
+
+        // assert
+        assert_eq!(
+            orphans.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(),
+            vec!["old"]
+        );
+        assert_eq!(
+            recent.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(),
+            vec!["fresh"]
+        );
+    }
+
+    #[test]
+    fn partition_orphans_without_manifest_treats_everything_as_orphan() {
+        // arrange
+        let now = SystemTime::now();
+        let objects = vec![object("x", Duration::from_secs(48 * 60 * 60), now)];
+
+        // act
+        let (orphans, recent) = partition_orphans(&objects, None, now);
+
+        // assert
+        assert_eq!(orphans.len(), 1);
+        assert!(recent.is_empty());
     }
 }
