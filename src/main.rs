@@ -185,6 +185,16 @@ enum RemoteCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Delete objects no longer referenced by the manifest (left behind by interrupted pushes)
+    Gc {
+        /// Show what would be deleted without changing the remote
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip the confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -279,6 +289,7 @@ fn main() -> anyhow::Result<()> {
                 pattern,
                 dry_run,
             } => commands::remote::rm(system, &pattern, dry_run)?,
+            RemoteCommand::Gc { dry_run, yes } => commands::remote::gc(dry_run, yes)?,
         },
         Command::Pull {
             all,

@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use ureq::Agent;
 use ureq::http::Response;
 
-use super::{ManifestConflict, Remote, Rev};
+use super::{ManifestConflict, ObjectInfo, Remote, Rev};
 use crate::credentials::{self, Secret};
 
 /// Where to register a Dropbox app. grch is distributed without one: each user creates
@@ -158,6 +158,26 @@ struct FileMetadata {
 #[derive(Deserialize)]
 struct SessionStart {
     session_id: String,
+}
+
+#[derive(Deserialize)]
+struct ListFolder {
+    entries: Vec<FolderEntry>,
+    cursor: String,
+    has_more: bool,
+}
+
+/// One `files/list_folder` entry. Folders and deleted entries carry no size, so both are
+/// optional and such entries are skipped.
+#[derive(Deserialize)]
+struct FolderEntry {
+    #[serde(rename = ".tag")]
+    tag: String,
+    name: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(default)]
+    server_modified: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -505,6 +525,56 @@ impl Remote for Dropbox {
         }
         check_ok(&mut res, "files/delete_v2")
     }
+
+    fn list_objects(&self) -> Result<Vec<ObjectInfo>> {
+        let mut objects = Vec::new();
+        let mut res = self.rpc(
+            "files/list_folder",
+            &serde_json::json!({ "path": OBJECTS_DIR, "recursive": false }),
+        )?;
+        // No objects have ever been uploaded: the folder itself does not exist yet.
+        if res.status() == 409 && error_summary(&mut res).contains("not_found") {
+            return Ok(objects);
+        }
+        check_ok(&mut res, "files/list_folder")?;
+        loop {
+            let page: ListFolder = read_json(&mut res)?;
+            for entry in page.entries {
+                if entry.tag != "file" {
+                    continue;
+                }
+                let Some(name) = entry.name.strip_suffix(".7z") else {
+                    continue;
+                };
+                let modified = entry
+                    .server_modified
+                    .as_deref()
+                    .map(parse_time)
+                    .transpose()?
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                objects.push(ObjectInfo {
+                    name: name.to_string(),
+                    size: entry.size,
+                    modified,
+                });
+            }
+            if !page.has_more {
+                return Ok(objects);
+            }
+            res = self.rpc(
+                "files/list_folder/continue",
+                &serde_json::json!({ "cursor": page.cursor }),
+            )?;
+            check_ok(&mut res, "files/list_folder/continue")?;
+        }
+    }
+}
+
+/// Dropbox timestamps are RFC 3339 in UTC (`2026-09-29T01:02:03Z`).
+fn parse_time(text: &str) -> Result<std::time::SystemTime> {
+    chrono::DateTime::parse_from_rfc3339(text)
+        .map(Into::into)
+        .with_context(|| format!("parse timestamp {text:?}"))
 }
 
 #[cfg(test)]
@@ -562,5 +632,23 @@ mod tests {
     fn object_path_is_under_objects_with_extension() {
         // act & assert
         assert_eq!(object_path("abc"), "/objects/abc.7z");
+    }
+
+    #[test]
+    fn list_folder_entry_tolerates_folders_without_size() {
+        // arrange
+        let body = r#"{"entries":[{".tag":"folder","name":"sub"},{".tag":"file","name":"ab.7z","size":12,"server_modified":"2026-09-29T01:02:03Z"}],"cursor":"c","has_more":false}"#;
+
+        // act
+        let page: ListFolder = serde_json::from_str(body).unwrap();
+
+        // assert
+        assert_eq!(page.entries.len(), 2);
+        assert_eq!(page.entries[0].tag, "folder");
+        assert_eq!(page.entries[1].size, 12);
+        assert_eq!(
+            parse_time(page.entries[1].server_modified.as_deref().unwrap()).unwrap(),
+            std::time::UNIX_EPOCH + Duration::from_secs(1_790_643_723)
+        );
     }
 }

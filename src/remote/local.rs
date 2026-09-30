@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
-use super::{ManifestConflict, Remote, Rev};
+use super::{ManifestConflict, ObjectInfo, Remote, Rev};
 
 pub const MANIFEST_FILE: &str = "manifest.7z";
 const OBJECTS_DIR: &str = "objects";
@@ -90,6 +90,33 @@ impl Remote for LocalDir {
             Err(e) => Err(e).with_context(|| format!("delete object {object}")),
         }
     }
+
+    fn list_objects(&self) -> Result<Vec<ObjectInfo>> {
+        let dir = self.root.join(OBJECTS_DIR);
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e).with_context(|| format!("read {}", dir.display())),
+        };
+        let mut objects = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let Some(name) = file_name.to_str().and_then(|n| n.strip_suffix(".7z")) else {
+                continue;
+            };
+            let meta = entry.metadata()?;
+            if !meta.is_file() {
+                continue;
+            }
+            objects.push(ObjectInfo {
+                name: name.to_string(),
+                size: meta.len(),
+                modified: meta.modified()?,
+            });
+        }
+        Ok(objects)
+    }
 }
 
 #[cfg(test)]
@@ -158,5 +185,27 @@ mod tests {
         assert_eq!(fs::read(&dest).unwrap(), b"payload");
         assert!(!temp.path().join("remote/objects/abc.7z").exists());
         assert!(remote.download("abc", &dest).is_err());
+    }
+
+    #[test]
+    fn list_objects_is_empty_without_objects_dir_and_skips_other_files() {
+        // arrange
+        let temp = TempDir::new().unwrap();
+        let remote = LocalDir::new(temp.path().join("remote"));
+        let src = temp.path().join("src.7z");
+        fs::write(&src, b"payload").unwrap();
+
+        // act
+        let before = remote.list_objects().unwrap();
+        remote.upload("abc", &src).unwrap();
+        fs::write(temp.path().join("remote/objects/note.txt"), b"x").unwrap();
+        fs::create_dir(temp.path().join("remote/objects/dir.7z")).unwrap();
+        let after = remote.list_objects().unwrap();
+
+        // assert
+        assert!(before.is_empty());
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].name, "abc");
+        assert_eq!(after[0].size, 7);
     }
 }
