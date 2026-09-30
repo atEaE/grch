@@ -63,16 +63,27 @@ A library is a directory with one folder per system. `init` matches existing fol
 
 Only files directly under those folders are synced. Custom DATs registered with `dat add` are synced too, so every machine names unregistered dumps the same way.
 
+### Dropbox app (once)
+
+grch ships without a Dropbox app of its own, so register one and use its key for every machine that shares the library:
+
+1. Open <https://www.dropbox.com/developers/apps> and choose "Create app".
+2. Pick "Scoped access" and, for the access type, **"App folder"**. grch then only ever sees `Apps/<your app name>/` in your Dropbox.
+3. On the "Permissions" tab enable `files.metadata.read`, `files.metadata.write`, `files.content.read` and `files.content.write`, then submit.
+4. Copy the **App key** from the "Settings" tab. No app secret and no redirect URI are needed.
+
+The app key is a public identifier, so it is kept in `.grch/config.toml` next to the rest of the remote settings (`remote.app_key`). A library on a different Dropbox app just has a different key in its own `.grch/`.
+
 ### Setup on each machine
 
 ```terminal
-grch init ~/roms            # or: grch init ~/roms --local /path/to/dir  (a directory as the remote, for testing)
+grch init ~/roms --app-key <KEY>    # or: grch init ~/roms --local /path/to/dir  (a directory as the remote, for testing)
 cd ~/roms
-grch remote login           # Dropbox OAuth in the browser, then set the archive password
+grch remote login                   # Dropbox OAuth in the browser, then set the archive password
 grch remote info
 ```
 
-The Dropbox app uses "App folder" access, so grch only sees its own folder. The refresh token and the archive password are kept in the OS credential store (Keychain / Credential Manager / Secret Service), never in the library. Use the same archive password on every machine: if it is lost, nothing on the remote can be decrypted. `GRCH_ARCHIVE_PASSWORD` overrides the stored password for one run.
+`grch remote login --app-key <KEY>` stores the key into an existing library, so an `init` without one can be completed later. The refresh token and the archive password are kept in the OS credential store (Keychain / Credential Manager / Secret Service), never in the library. Use the same archive password on every machine: if it is lost, nothing on the remote can be decrypted. `GRCH_ARCHIVE_PASSWORD` overrides the stored password for one run.
 
 ### Daily use
 
@@ -85,6 +96,8 @@ grch pull --system sfc      # one system
 grch pull "pocket*"         # titles matching a glob (name with or without extension)
 grch remote ls              # what the remote holds (✓ = present here)
 ```
+
+A `push` stopped with Ctrl+C is safe to rerun, but the objects it had already uploaded stay on the remote unreferenced. `grch remote gc` lists and deletes them (`--dry-run` to only list); objects uploaded in the last 24 hours are left alone in case another machine is still pushing.
 
 Deleting a file locally never deletes it from the remote. To remove something for every machine:
 

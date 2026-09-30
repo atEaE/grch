@@ -10,13 +10,14 @@ use sha2::{Digest, Sha256};
 use ureq::Agent;
 use ureq::http::Response;
 
-use super::{ManifestConflict, Remote, Rev};
+use super::{ManifestConflict, ObjectInfo, Remote, Rev};
 use crate::credentials::{self, Secret};
 
-/// Dropbox app key (a public identifier; PKCE needs no secret). The app must be created
-/// with "App folder" access so grch only ever sees its own folder.
-/// Overridable for development with GRCH_DROPBOX_APP_KEY.
-const APP_KEY: &str = "";
+/// Where to register a Dropbox app. grch is distributed without one: each user creates
+/// their own with "App folder" access (so grch only ever sees its own folder) and gives
+/// its key to `init --app-key` / `remote login --app-key`, which keeps it in
+/// `.grch/config.toml` beside the rest of the remote settings.
+pub const APP_CONSOLE_URL: &str = "https://www.dropbox.com/developers/apps";
 
 const AUTH_URL: &str = "https://www.dropbox.com/oauth2/authorize";
 const TOKEN_URL: &str = "https://api.dropboxapi.com/oauth2/token";
@@ -40,12 +41,15 @@ pub struct Dropbox {
     access: Mutex<Option<(String, Instant)>>,
 }
 
-fn app_key() -> Result<String> {
-    let key = std::env::var("GRCH_DROPBOX_APP_KEY").unwrap_or_else(|_| APP_KEY.to_string());
-    if key.is_empty() {
-        bail!("no Dropbox app key: set GRCH_DROPBOX_APP_KEY or build grch with one");
+/// The app key from the library config, or a pointer to `init --app-key` when unset.
+pub fn app_key(config: &crate::library::Remote) -> Result<&str> {
+    match config.app_key.as_deref() {
+        Some(key) if !key.is_empty() => Ok(key),
+        _ => bail!(
+            "no Dropbox app key in .grch/config.toml. Create an app with \"App folder\" access at \
+             {APP_CONSOLE_URL}, then run `grch remote login --app-key <KEY>`."
+        ),
     }
-    Ok(key)
 }
 
 fn agent() -> Agent {
@@ -86,8 +90,7 @@ struct TokenResponse {
 /// OAuth 2.0 authorization code flow with PKCE. No redirect URI is registered, so Dropbox
 /// shows the code on a page for the user to paste; that keeps grch free of a local HTTP
 /// listener and works the same on every machine.
-pub fn login() -> Result<()> {
-    let app_key = app_key()?;
+pub fn login(app_key: &str) -> Result<()> {
     let mut verifier_bytes = [0u8; 32];
     getrandom::fill(&mut verifier_bytes).context("generate PKCE verifier")?;
     let verifier = base64url(&verifier_bytes);
@@ -114,7 +117,7 @@ pub fn login() -> Result<()> {
             ("code", code),
             ("grant_type", "authorization_code"),
             ("code_verifier", verifier.as_str()),
-            ("client_id", app_key.as_str()),
+            ("client_id", app_key),
         ])
         .context("request token")?;
     if !res.status().is_success() {
@@ -125,12 +128,21 @@ pub fn login() -> Result<()> {
     let Some(refresh) = token.refresh_token else {
         bail!("Dropbox returned no refresh token");
     };
-    credentials::set(Secret::DropboxRefreshToken, &refresh)?;
+    credentials::set(Secret::DropboxRefreshToken { app_key }, &refresh)?;
     Ok(())
 }
 
-pub fn logout() -> Result<()> {
-    credentials::delete(Secret::DropboxRefreshToken)
+pub fn logout(app_key: &str) -> Result<()> {
+    credentials::delete(Secret::DropboxRefreshToken { app_key })
+}
+
+/// Open the library's Dropbox remote with the token stored for its app on this machine.
+pub fn open(config: &crate::library::Remote) -> Result<Dropbox> {
+    let app_key = app_key(config)?;
+    let Some(token) = credentials::get(Secret::DropboxRefreshToken { app_key })? else {
+        bail!("not logged in to Dropbox on this machine. Run `grch remote login` first.");
+    };
+    Ok(Dropbox::new(app_key.to_string(), token))
 }
 
 #[derive(Deserialize)]
@@ -146,6 +158,26 @@ struct FileMetadata {
 #[derive(Deserialize)]
 struct SessionStart {
     session_id: String,
+}
+
+#[derive(Deserialize)]
+struct ListFolder {
+    entries: Vec<FolderEntry>,
+    cursor: String,
+    has_more: bool,
+}
+
+/// One `files/list_folder` entry. Folders and deleted entries carry no size, so both are
+/// optional and such entries are skipped.
+#[derive(Deserialize)]
+struct FolderEntry {
+    #[serde(rename = ".tag")]
+    tag: String,
+    name: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(default)]
+    server_modified: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -178,13 +210,13 @@ enum Body<'a> {
 }
 
 impl Dropbox {
-    pub fn new(refresh_token: String) -> Result<Self> {
-        Ok(Dropbox {
+    fn new(app_key: String, refresh_token: String) -> Self {
+        Dropbox {
             agent: agent(),
-            app_key: app_key()?,
+            app_key,
             refresh_token,
             access: Mutex::new(None),
-        })
+        }
     }
 
     fn access_token(&self, force_refresh: bool) -> Result<String> {
@@ -396,7 +428,8 @@ fn check_ok(res: &mut Response<ureq::Body>, what: &str) -> Result<()> {
         return Ok(());
     }
     let status = res.status();
-    bail!("{what} failed ({status}): {}", error_summary(res));
+    let body = res.body_mut().read_to_string().unwrap_or_default();
+    bail!("{what} failed ({status}): {}", body.trim());
 }
 
 fn object_path(object: &str) -> String {
@@ -492,6 +525,56 @@ impl Remote for Dropbox {
         }
         check_ok(&mut res, "files/delete_v2")
     }
+
+    fn list_objects(&self) -> Result<Vec<ObjectInfo>> {
+        let mut objects = Vec::new();
+        let mut res = self.rpc(
+            "files/list_folder",
+            &serde_json::json!({ "path": OBJECTS_DIR, "recursive": false }),
+        )?;
+        // No objects have ever been uploaded: the folder itself does not exist yet.
+        if res.status() == 409 && error_summary(&mut res).contains("not_found") {
+            return Ok(objects);
+        }
+        check_ok(&mut res, "files/list_folder")?;
+        loop {
+            let page: ListFolder = read_json(&mut res)?;
+            for entry in page.entries {
+                if entry.tag != "file" {
+                    continue;
+                }
+                let Some(name) = entry.name.strip_suffix(".7z") else {
+                    continue;
+                };
+                let modified = entry
+                    .server_modified
+                    .as_deref()
+                    .map(parse_time)
+                    .transpose()?
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                objects.push(ObjectInfo {
+                    name: name.to_string(),
+                    size: entry.size,
+                    modified,
+                });
+            }
+            if !page.has_more {
+                return Ok(objects);
+            }
+            res = self.rpc(
+                "files/list_folder/continue",
+                &serde_json::json!({ "cursor": page.cursor }),
+            )?;
+            check_ok(&mut res, "files/list_folder/continue")?;
+        }
+    }
+}
+
+/// Dropbox timestamps are RFC 3339 in UTC (`2026-09-29T01:02:03Z`).
+fn parse_time(text: &str) -> Result<std::time::SystemTime> {
+    chrono::DateTime::parse_from_rfc3339(text)
+        .map(Into::into)
+        .with_context(|| format!("parse timestamp {text:?}"))
 }
 
 #[cfg(test)]
@@ -549,5 +632,23 @@ mod tests {
     fn object_path_is_under_objects_with_extension() {
         // act & assert
         assert_eq!(object_path("abc"), "/objects/abc.7z");
+    }
+
+    #[test]
+    fn list_folder_entry_tolerates_folders_without_size() {
+        // arrange
+        let body = r#"{"entries":[{".tag":"folder","name":"sub"},{".tag":"file","name":"ab.7z","size":12,"server_modified":"2026-09-29T01:02:03Z"}],"cursor":"c","has_more":false}"#;
+
+        // act
+        let page: ListFolder = serde_json::from_str(body).unwrap();
+
+        // assert
+        assert_eq!(page.entries.len(), 2);
+        assert_eq!(page.entries[0].tag, "folder");
+        assert_eq!(page.entries[1].size, 12);
+        assert_eq!(
+            parse_time(page.entries[1].server_modified.as_deref().unwrap()).unwrap(),
+            std::time::UNIX_EPOCH + Duration::from_secs(1_790_643_723)
+        );
     }
 }

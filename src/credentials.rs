@@ -5,45 +5,50 @@ const SERVICE: &str = "grch";
 /// Per-machine secrets kept in the OS credential store (Keychain / Credential Manager /
 /// Secret Service), never in `.grch/` or a config file.
 #[derive(Debug, Clone, Copy)]
-pub enum Secret {
-    DropboxRefreshToken,
+pub enum Secret<'a> {
+    /// Issued by Dropbox for one app, so it is stored per app key: two libraries on
+    /// different Dropbox apps can both be logged in on the same machine.
+    DropboxRefreshToken {
+        app_key: &'a str,
+    },
     ArchivePassword,
 }
 
-impl Secret {
-    fn username(self) -> &'static str {
+impl Secret<'_> {
+    fn username(self) -> String {
         match self {
-            Secret::DropboxRefreshToken => "dropbox-refresh-token",
-            Secret::ArchivePassword => "archive-password",
+            Secret::DropboxRefreshToken { app_key } => format!("dropbox-refresh-token:{app_key}"),
+            Secret::ArchivePassword => "archive-password".to_string(),
         }
     }
 }
 
-fn entry(secret: Secret) -> Result<keyring::Entry> {
-    keyring::Entry::new(SERVICE, secret.username()).context("open credential store")
+fn entry(secret: Secret<'_>) -> Result<(keyring::Entry, String)> {
+    let username = secret.username();
+    let entry = keyring::Entry::new(SERVICE, &username).context("open credential store")?;
+    Ok((entry, username))
 }
 
-pub fn get(secret: Secret) -> Result<Option<String>> {
-    match entry(secret)?.get_password() {
+pub fn get(secret: Secret<'_>) -> Result<Option<String>> {
+    let (entry, username) = entry(secret)?;
+    match entry.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => {
-            Err(e).with_context(|| format!("read {} from credential store", secret.username()))
-        }
+        Err(e) => Err(e).with_context(|| format!("read {username} from credential store")),
     }
 }
 
-pub fn set(secret: Secret, value: &str) -> Result<()> {
-    entry(secret)?
+pub fn set(secret: Secret<'_>, value: &str) -> Result<()> {
+    let (entry, username) = entry(secret)?;
+    entry
         .set_password(value)
-        .with_context(|| format!("store {} in credential store", secret.username()))
+        .with_context(|| format!("store {username} in credential store"))
 }
 
-pub fn delete(secret: Secret) -> Result<()> {
-    match entry(secret)?.delete_credential() {
+pub fn delete(secret: Secret<'_>) -> Result<()> {
+    let (entry, username) = entry(secret)?;
+    match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => {
-            Err(e).with_context(|| format!("delete {} from credential store", secret.username()))
-        }
+        Err(e) => Err(e).with_context(|| format!("delete {username} from credential store")),
     }
 }

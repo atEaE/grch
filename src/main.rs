@@ -76,8 +76,13 @@ enum Command {
         dir: Option<PathBuf>,
 
         /// Use a local directory as the remote instead of Dropbox (for testing)
-        #[arg(long, value_name = "DIR")]
+        #[arg(long, value_name = "DIR", conflicts_with = "app_key")]
         local: Option<PathBuf>,
+
+        /// Key of your Dropbox app ("App folder" access, from
+        /// https://www.dropbox.com/developers/apps); can also be given to `remote login`
+        #[arg(long, value_name = "KEY")]
+        app_key: Option<String>,
     },
 
     /// Show what push / pull would transfer (no transfer)
@@ -147,7 +152,11 @@ enum Command {
 #[derive(Subcommand)]
 enum RemoteCommand {
     /// Authorize this machine with the remote and store the archive password
-    Login,
+    Login {
+        /// Key of your Dropbox app, saved to .grch/config.toml (needed once per library)
+        #[arg(long, value_name = "KEY")]
+        app_key: Option<String>,
+    },
     /// Remove the remote token and archive password from this machine
     Logout,
     /// Show the remote, account and manifest summary
@@ -175,6 +184,16 @@ enum RemoteCommand {
         /// Show what would be removed without changing the remote
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Delete objects no longer referenced by the manifest (left behind by interrupted pushes)
+    Gc {
+        /// Show what would be deleted without changing the remote
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip the confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
     },
 }
 
@@ -248,15 +267,19 @@ fn main() -> anyhow::Result<()> {
             DatCommand::Ls => commands::dat::ls()?,
         },
         Command::Info => commands::info::run()?,
-        Command::Init { dir, local } => {
+        Command::Init {
+            dir,
+            local,
+            app_key,
+        } => {
             let dir = match dir {
                 Some(dir) => dir,
                 None => std::env::current_dir()?,
             };
-            commands::init::run(&dir, local.as_deref())?
+            commands::init::run(&dir, local.as_deref(), app_key.as_deref())?
         }
         Command::Remote { command } => match command {
-            RemoteCommand::Login => commands::remote::login()?,
+            RemoteCommand::Login { app_key } => commands::remote::login(app_key.as_deref())?,
             RemoteCommand::Logout => commands::remote::logout()?,
             RemoteCommand::Info => commands::remote::info()?,
             RemoteCommand::Ls { system, pattern } => commands::remote::ls(system, &pattern)?,
@@ -266,6 +289,7 @@ fn main() -> anyhow::Result<()> {
                 pattern,
                 dry_run,
             } => commands::remote::rm(system, &pattern, dry_run)?,
+            RemoteCommand::Gc { dry_run, yes } => commands::remote::gc(dry_run, yes)?,
         },
         Command::Pull {
             all,
