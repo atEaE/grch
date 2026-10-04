@@ -97,7 +97,7 @@ grch pull "pocket*"         # titles matching a glob (name with or without exten
 grch remote ls              # what the remote holds (✓ = present here)
 ```
 
-A `push` stopped with Ctrl+C is safe to rerun, but the objects it had already uploaded stay on the remote unreferenced. `grch remote gc` lists and deletes them (`--dry-run` to only list); objects uploaded in the last 24 hours are left alone in case another machine is still pushing.
+`push` records its progress on the remote as it goes: after every 256 MB uploaded or every minute, whichever comes first, and once more when a file fails. A push that fails or is stopped with Ctrl+C is safe to rerun and only has the files that were not recorded yet left to do. Ctrl+C can still leave the last few uploads on the remote unreferenced. `grch remote gc` lists and deletes them (`--dry-run` to only list); objects uploaded in the last 24 hours are left alone in case another machine is still pushing.
 
 Deleting a file locally never deletes it from the remote. To remove something for every machine:
 
