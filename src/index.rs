@@ -167,6 +167,7 @@ mod tests {
         let remote = crate::library::Remote {
             backend: "dropbox".to_string(),
             path: None,
+            app_key: None,
         };
         let (library, _) = Library::init(temp.path(), remote).unwrap();
         (temp, library)

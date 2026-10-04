@@ -26,8 +26,14 @@ pub struct Config {
 pub struct Remote {
     pub backend: String,
 
+    /// Directory of the `local` backend.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+
+    /// Dropbox app key: identifies the Dropbox app this library talks to. A public
+    /// identifier (PKCE needs no secret), so it lives with the rest of the remote config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_key: Option<String>,
 }
 
 /// A file found under one of the configured system folders.
@@ -106,14 +112,19 @@ impl Library {
 
         let config = Config { remote, dirs };
         fs::create_dir(&grch).with_context(|| format!("create {}", grch.display()))?;
-        let body = toml::to_string(&config)?;
-        fs::write(grch.join(CONFIG_FILE), body)?;
-
         let library = Library {
             root: dir.to_path_buf(),
             config,
         };
+        library.save_config()?;
         Ok((library, InitReport { matched, ignored }))
+    }
+
+    /// Write `.grch/config.toml` from the in-memory config.
+    pub fn save_config(&self) -> Result<()> {
+        let path = self.grch_dir().join(CONFIG_FILE);
+        let body = toml::to_string(&self.config)?;
+        fs::write(&path, body).with_context(|| format!("write {}", path.display()))
     }
 
     /// Walk up from `start` until a directory containing `.grch/` is found.
@@ -219,6 +230,7 @@ mod tests {
         Remote {
             backend: "dropbox".to_string(),
             path: None,
+            app_key: Some("abc123".to_string()),
         }
     }
 
@@ -314,6 +326,7 @@ mod tests {
         let remote = Remote {
             backend: "local".to_string(),
             path: Some("/tmp/remote".to_string()),
+            app_key: None,
         };
         Library::init(temp.path(), remote.clone()).unwrap();
 
@@ -322,6 +335,50 @@ mod tests {
 
         // assert
         assert_eq!(reopened.config.remote, remote);
+        assert!(
+            !fs::read_to_string(temp.path().join(GRCH_DIR).join(CONFIG_FILE))
+                .unwrap()
+                .contains("app_key")
+        );
+    }
+
+    #[test]
+    fn app_key_is_written_and_read_from_config() {
+        // arrange
+        let temp = TempDir::new().unwrap();
+        let (mut library, _) = Library::init(temp.path(), dropbox()).unwrap();
+        library.config.remote.app_key = Some("changed".to_string());
+
+        // act
+        library.save_config().unwrap();
+        let reopened = Library::open(temp.path()).unwrap();
+
+        // assert
+        assert_eq!(reopened.config.remote.app_key.as_deref(), Some("changed"));
+        assert!(
+            fs::read_to_string(temp.path().join(GRCH_DIR).join(CONFIG_FILE))
+                .unwrap()
+                .contains("app_key = \"changed\"")
+        );
+    }
+
+    #[test]
+    fn config_without_app_key_still_parses() {
+        // arrange: a config written before app_key existed
+        let temp = TempDir::new().unwrap();
+        let grch = temp.path().join(GRCH_DIR);
+        fs::create_dir(&grch).unwrap();
+        fs::write(
+            grch.join(CONFIG_FILE),
+            "[remote]\nbackend = \"dropbox\"\n\n[dirs]\nsfc = \"SFC\"\n",
+        )
+        .unwrap();
+
+        // act
+        let library = Library::open(temp.path()).unwrap();
+
+        // assert
+        assert_eq!(library.config.remote.app_key, None);
     }
 
     #[test]
